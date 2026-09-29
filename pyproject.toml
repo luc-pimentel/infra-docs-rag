@@ -1,0 +1,39 @@
+[project]
+name = "infra-docs-rag"
+version = "0.1.0"
+description = "RAG over Kubernetes, Prometheus and Argo CD docs, with cited answers."
+authors = [
+    { name = "luc-pimentel", email = "154371376+luc-pimentel@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "lxml>=6.1.3",
+    "pydantic>=2.13.5",
+    "pymupdf>=1.28.2",
+    "pyyaml>=6.0.3",
+    "trafilatura>=2.2.0",
+]
+
+[project.scripts]
+infra-docs-rag = "infra_docs_rag.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.9",
+]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # the formatter owns line length; long strings stay readable
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

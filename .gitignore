@@ -10,3 +10,6 @@ dist/
 .ruff_cache/
 .ipynb_checkpoints/
 .DS_Store
+
+# Downloaded sources and pipeline output
+data/
