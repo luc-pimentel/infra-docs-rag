@@ -14,7 +14,8 @@ Each stage ships into this repo, so the service grows with the checklist.
 
 - [x] 01 · Document ingestion: PDF, HTML and text into normalized records, with deduplication,
   provenance and parse diagnostics ([report](reports/ingestion.md))
-- [ ] 02 · Embeddings for semantic retrieval
+- [x] 02 · Embeddings for semantic retrieval: every section embedded with local models into a cosine
+  index you can search, with three models compared on labelled queries ([report](reports/embeddings.md))
 - [ ] 03 · Chunking and document segmentation
 
 **Search**
@@ -61,15 +62,37 @@ chunk cut from it traces back to its file, page and section.
 - **Failures:** damaged, encrypted, blank and navigation-only files get a status and a reason
   instead of crashing the run.
 
+## Embeddings
+
+Each section from ingestion becomes one chunk, heading included, until real chunking lands. A local
+[sentence-transformers](https://www.sbert.net/) model embeds every chunk, and the index is plain
+files under `data/index/<model>/`: the vectors, the chunks with their provenance, and a manifest
+naming the model, its pinned revision, the vector size and the metric.
+
+- **Models:** `bge-small` by default, plus `bge-base` and `minilm`, each pinned to a Hugging Face
+  commit. BGE queries get the instruction its model card recommends; documents don't.
+- **Search:** vectors are stored at length 1, so a dot product gives the cosine similarity. Search
+  refuses any model other than the one the index was built with: vectors from two models are not
+  comparable, even when they are the same size.
+- **Evaluation:** [`eval/queries.yaml`](eval/queries.yaml) holds labelled queries (reworded questions,
+  config keys, and questions that depend on metadata), each with a hypothesis written before it was
+  scored. `evaluate` probes every model against a small hand-picked set of chunks, compares them on
+  the full index, and writes the [report](reports/embeddings.md).
+
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew install tesseract`).
 
 ```sh
 uv sync
-uv run infra-docs-rag all   # download the sources, ingest them, write the report
+uv run infra-docs-rag all        # download the sources, ingest them, write the report
+uv run infra-docs-rag embed      # embed every section with bge-small (--model to pick another)
+uv run infra-docs-rag search "How do I undo a bad release?"
+uv run infra-docs-rag evaluate   # rebuild all three indexes, compare them, write the report
 uv run pytest
 ```
 
-Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, and the evidence to
-[`reports/ingestion.md`](reports/ingestion.md).
+Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, indexes to `data/index/`,
+and the evidence to [`reports/ingestion.md`](reports/ingestion.md) and
+[`reports/embeddings.md`](reports/embeddings.md). The first `embed` downloads its model from Hugging
+Face (about 130 MB for bge-small; `evaluate` needs all three, about 660 MB).
