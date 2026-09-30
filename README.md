@@ -16,7 +16,9 @@ Each stage ships into this repo, so the service grows with the checklist.
   provenance and parse diagnostics ([report](reports/ingestion.md))
 - [x] 02 · Embeddings for semantic retrieval: every section embedded with local models into a cosine
   index you can search, with three models compared on labelled queries ([report](reports/embeddings.md))
-- [ ] 03 · Chunking and document segmentation
+- [x] 03 · Chunking and document segmentation: fixed, sentence and section-aware chunks compared at
+  three sizes on labelled queries; every chunk an exact, cited slice of its document, sized to what the
+  model reads ([report](reports/chunking.md))
 
 **Search**
 
@@ -62,12 +64,33 @@ chunk cut from it traces back to its file, page and section.
 - **Failures:** damaged, encrypted, blank and navigation-only files get a status and a reason
   instead of crashing the run.
 
+## Chunking
+
+Retrieval returns chunks, not whole documents. Four strategies cut the same cleaned text, sized in
+the embedding model's own tokens:
+
+- **Whole sections:** one chunk per section, however long. The embedding stage's baseline.
+- **Fixed:** windows of whole words, the same number of tokens each.
+- **Sentences:** whole sentences, and whole lines for lists, code and config, packed up to the size.
+- **Section-aware:** one chunk per section when it fits. A longer section is cut at paragraphs, then
+  lines, sentences and words, and every piece keeps the section's path.
+
+A chunk's text is always an exact slice of its document's cleaned text, so its offsets, section path,
+pages and project trace it back to the source. An optional context line (project, section path and
+pages) is embedded in front of the text, so a piece cut from the middle of a section still says what
+it is about.
+
+`evaluate-chunking` runs every strategy at 128, 256 and 512 tokens, with and without the context
+line, against the labelled queries and writes the [report](reports/chunking.md). `embed` uses
+section-aware chunks of up to 512 tokens with the context line: a section stays whole unless the
+model can't read it in one piece, and every chunk cites exactly one section.
+
 ## Embeddings
 
-Each section from ingestion becomes one chunk, heading included, until real chunking lands. A local
-[sentence-transformers](https://www.sbert.net/) model embeds every chunk, and the index is plain
-files under `data/index/<model>/`: the vectors, the chunks with their provenance, and a manifest
-naming the model, its pinned revision, the vector size and the metric.
+A local [sentence-transformers](https://www.sbert.net/) model embeds every chunk, context line
+included, and the index is plain files under `data/index/<model>/`: the vectors, the chunks with their
+provenance, and a manifest naming the model, its pinned revision, the vector size, the metric and how
+the chunks were cut.
 
 - **Models:** `bge-small` by default, plus `bge-base` and `minilm`, each pinned to a Hugging Face
   commit. BGE queries get the instruction its model card recommends; documents don't.
@@ -77,7 +100,7 @@ naming the model, its pinned revision, the vector size and the metric.
 - **Evaluation:** [`eval/queries.yaml`](eval/queries.yaml) holds labelled queries (reworded questions,
   config keys, and questions that depend on metadata), each with a hypothesis written before it was
   scored. `evaluate` probes every model against a small hand-picked set of chunks, compares them on
-  the full index, and writes the [report](reports/embeddings.md).
+  whole-section indexes it keeps in memory, and writes the [report](reports/embeddings.md).
 
 ## Run it
 
@@ -85,14 +108,17 @@ Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew i
 
 ```sh
 uv sync
-uv run infra-docs-rag all        # download the sources, ingest them, write the report
-uv run infra-docs-rag embed      # embed every section with bge-small (--model to pick another)
+uv run infra-docs-rag all                # download the sources, ingest them, write the report
+uv run infra-docs-rag chunk              # cut every document with each strategy, compare the chunks
+uv run infra-docs-rag embed              # embed the default chunks with bge-small (--model for another)
 uv run infra-docs-rag search "How do I undo a bad release?"
-uv run infra-docs-rag evaluate   # rebuild all three indexes, compare them, write the report
+uv run infra-docs-rag evaluate           # compare the three models on whole sections, write the report
+uv run infra-docs-rag evaluate-chunking  # compare chunking strategies and sizes, write the report
 uv run pytest
 ```
 
-Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, indexes to `data/index/`,
-and the evidence to [`reports/ingestion.md`](reports/ingestion.md) and
-[`reports/embeddings.md`](reports/embeddings.md). The first `embed` downloads its model from Hugging
-Face (about 130 MB for bge-small; `evaluate` needs all three, about 660 MB).
+Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, chunks to `data/chunks/`,
+indexes to `data/index/`, and the evidence to [`reports/ingestion.md`](reports/ingestion.md),
+[`reports/chunking.md`](reports/chunking.md) and [`reports/embeddings.md`](reports/embeddings.md).
+The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
+needs all three, about 660 MB).
