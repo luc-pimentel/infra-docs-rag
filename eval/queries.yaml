@@ -4,6 +4,10 @@
 # repeats inside one document can be written as the end of its path, "Parent › Child". Each
 # hypothesis was written before its query was scored.
 #
+# A query about one identifier also names it in `contains`. A whole section always includes it,
+# but once chunking cuts a long section into pieces, only a piece that includes the key answers
+# the query (`infra-docs-rag evaluate-chunking`).
+#
 # The probe scores each query against a small set: the right sections of every query plus the
 # decoys at the bottom, picked to look like an answer without being one.
 
@@ -59,6 +63,7 @@ queries:
     expect:
       source: prom-alerting-rules-md
       sections: [Defining alerting rules]
+      contains: keep_firing_for
     hypothesis: >-
       Could hold: the tokenizer splits it into plain words (keep, firing, for) that the right
       section also uses. Templating covers the same alerting rules without the key.
@@ -69,6 +74,7 @@ queries:
     expect:
       source: k8s-deployment-md
       sections: [Progress Deadline Seconds, Failed Deployment]
+      contains: progressDeadlineSeconds
     hypothesis: >-
       Likely to miss: the tokenizer cuts it into "progress" plus fragments (de, ad, lines, ec,
       ond, s), and Min Ready Seconds is a sibling field described with the same sentence shape.
@@ -79,6 +85,7 @@ queries:
     expect:
       source: k8s-deployment-md
       sections: [Rolling Update Deployment]
+      contains: maxSurge
     hypothesis: >-
       Could go either way: the right section repeats maxSurge six times, but the key becomes
       "max" plus fragments (sur, ge), and Recreate Deployment covers update strategies without it.
@@ -89,6 +96,7 @@ queries:
     expect:
       source: k8s-service
       sections: ["type: ExternalName"]
+      contains: ExternalName
     hypothesis: >-
       Should hold: it splits into two real words (external, name) and the right section uses it
       seven times, though the other Service types are close look-alikes.
@@ -99,6 +107,7 @@ queries:
     expect:
       source: argocd-declarative-setup-md
       sections: [Clusters]
+      contains: ARGOCD_K8S_CLIENT_QPS
     hypothesis: >-
       Should fail for every model: the key appears once, around token 626 of a 975-token section,
       past the 512 tokens bge reads and the 256 MiniLM reads, so no model sees it. Only the rest of

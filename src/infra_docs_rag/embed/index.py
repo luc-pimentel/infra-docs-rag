@@ -15,7 +15,7 @@ from typing import Literal
 import numpy as np
 from pydantic import BaseModel
 
-from .chunks import Chunk
+from ..chunk.chunks import Chunk, Chunking
 from .embedders import Embedder
 
 
@@ -27,6 +27,7 @@ class Manifest(BaseModel):
     metric: Literal["cosine"] = "cosine"
     query_prefix: str
     max_tokens: int
+    chunking: Chunking = Chunking()  # indexes from before chunking hold whole sections
     chunks: int
     truncated: int  # chunks longer than max_tokens: the model only saw their beginning
     ingest_version: str
@@ -104,8 +105,10 @@ class Index:
         return cls(manifest, chunks, vectors)
 
 
-def build(embedder: Embedder, chunks: list[Chunk], ingest_version: str) -> Index:
-    texts = [c.text for c in chunks]
+def build(
+    embedder: Embedder, chunks: list[Chunk], ingest_version: str, chunking: Chunking | None = None
+) -> Index:
+    texts = [c.embedded for c in chunks]
     started = time.perf_counter()
     vectors = unit(embedder.embed_documents(texts))
     seconds = time.perf_counter() - started
@@ -116,6 +119,7 @@ def build(embedder: Embedder, chunks: list[Chunk], ingest_version: str) -> Index
         dimensions=embedder.dimensions,
         query_prefix=embedder.query_prefix,
         max_tokens=embedder.max_tokens,
+        chunking=chunking or Chunking(),
         chunks=len(chunks),
         truncated=sum(n > embedder.max_tokens for n in embedder.token_counts(texts)),
         ingest_version=ingest_version,

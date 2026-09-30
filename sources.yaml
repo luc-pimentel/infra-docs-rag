@@ -1,73 +1,90 @@
 # Documents the ingestion pipeline reads. URL sources are downloaded into data/raw/
-# (not committed); path sources are small test files kept in the repo.
+# (not committed); path sources are small test files kept in the repo. `project` names the
+# documentation set a source belongs to: every chunk carries it, and it leads the context line
+# embedded in front of the chunk's text.
 sources:
   # Kubernetes docs (CC BY 4.0)
   - id: k8s-pods
     type: html
+    project: Kubernetes
     url: https://kubernetes.io/docs/concepts/workloads/pods/
     license: CC-BY-4.0
   - id: k8s-pods-no-slash
     type: html
+    project: Kubernetes
     url: https://kubernetes.io/docs/concepts/workloads/pods
     license: CC-BY-4.0
     note: Same page as k8s-pods, reached through a URL without the trailing slash.
   - id: k8s-service
     type: html
+    project: Kubernetes
     url: https://kubernetes.io/docs/concepts/services-networking/service/
     license: CC-BY-4.0
   - id: k8s-configmap
     type: html
+    project: Kubernetes
     url: https://kubernetes.io/docs/concepts/configuration/configmap/
     license: CC-BY-4.0
   - id: k8s-debug-pods
     type: html
+    project: Kubernetes
     url: https://kubernetes.io/docs/tasks/debug/debug-application/debug-pods/
     license: CC-BY-4.0
   - id: k8s-configmap-md
     type: markdown
+    project: Kubernetes
     url: https://raw.githubusercontent.com/kubernetes/website/main/content/en/docs/concepts/configuration/configmap.md
     license: CC-BY-4.0
     note: Markdown source of k8s-configmap, the same content in a second format.
   - id: k8s-deployment-md
     type: markdown
+    project: Kubernetes
     url: https://raw.githubusercontent.com/kubernetes/website/main/content/en/docs/concepts/workloads/controllers/deployment.md
     license: CC-BY-4.0
 
   # Prometheus docs (Apache-2.0)
   - id: prom-querying-basics
     type: html
+    project: Prometheus
     url: https://prometheus.io/docs/prometheus/latest/querying/basics/
     license: Apache-2.0
   - id: prom-querying-basics-md
     type: markdown
+    project: Prometheus
     url: https://raw.githubusercontent.com/prometheus/prometheus/main/docs/querying/basics.md
     license: Apache-2.0
     note: Markdown source of prom-querying-basics.
   - id: prom-alerting-rules-md
     type: markdown
+    project: Prometheus
     url: https://raw.githubusercontent.com/prometheus/prometheus/main/docs/configuration/alerting_rules.md
     license: Apache-2.0
   - id: prom-alerting-practices
     type: html
+    project: Prometheus
     url: https://prometheus.io/docs/practices/alerting/
     license: Apache-2.0
 
   # Argo CD docs (Apache-2.0)
   - id: argocd-getting-started-stable
     type: html
+    project: Argo CD
     url: https://argo-cd.readthedocs.io/en/stable/getting_started/
     license: Apache-2.0
   - id: argocd-getting-started-latest
     type: html
+    project: Argo CD
     url: https://argo-cd.readthedocs.io/en/latest/getting_started/
     license: Apache-2.0
     note: The same page from the development docs version; only the navigation differs.
   - id: argocd-declarative-setup-md
     type: markdown
+    project: Argo CD
     url: https://raw.githubusercontent.com/argoproj/argo-cd/master/docs/operator-manual/declarative-setup.md
     license: Apache-2.0
   - id: argocd-cm-yaml
     type: text
+    project: Argo CD
     url: https://raw.githubusercontent.com/argoproj/argo-cd/master/docs/operator-manual/argocd-cm.yaml
     license: Apache-2.0
     note: Commented reference config, ingested as plain text.
@@ -75,10 +92,12 @@ sources:
   # CNCF TAG Security whitepapers (docs: CC BY 4.0)
   - id: cncf-security-whitepaper
     type: pdf
+    project: CNCF TAG Security
     url: https://raw.githubusercontent.com/cncf/tag-security/main/community/resources/security-whitepaper/v2/CNCF_cloud-native-security-whitepaper-May2022-v2.pdf
     license: CC-BY-4.0
   - id: cncf-supply-chain-whitepaper
     type: pdf
+    project: CNCF TAG Security
     url: https://raw.githubusercontent.com/cncf/tag-security/main/community/working-groups/supply-chain-security/supply-chain-security-paper-v2/Software_Supply_Chain_Practices_whitepaper_v2.pdf
     license: CC-BY-4.0
 

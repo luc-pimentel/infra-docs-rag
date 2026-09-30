@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from infra_docs_rag.embed.chunks import Chunk
+from infra_docs_rag.chunk.chunks import Chunk
 from infra_docs_rag.ingest.dedup import content_hash
 from infra_docs_rag.ingest.models import Document, ParseStatus, Provenance, SourceType
 
@@ -18,16 +18,17 @@ class FakeEmbedder:
     Each word is hashed, salted with the model's name, into one of a few dimensions, so texts that
     share words land close together and two fake models have different maps. Vectors come out at
     whatever length the counts give them; scaling them to length 1 is the index's job. `fixed`
-    pins exact vectors for texts that need a known geometry.
+    pins exact vectors for texts that need a known geometry. A token is a run of non-space characters.
     """
 
-    def __init__(self, name: str = "fake", revision: str = "r1", dimensions: int = 64, fixed=None):
+    def __init__(self, name="fake", revision="r1", dimensions=64, fixed=None, max_tokens=8):
         self.name = name
         self.model_id = f"test/{name}"
         self.revision = revision
         self.query_prefix = ""
         self.dimensions = dimensions
-        self.max_tokens = 8
+        self.max_tokens = max_tokens
+        self.special_tokens = 0
         self.parameters = 0
         self.fixed = fixed or {}
 
@@ -47,6 +48,9 @@ class FakeEmbedder:
 
     def token_counts(self, texts: list[str]) -> list[int]:
         return [len(t.split()) for t in texts]
+
+    def token_spans(self, text: str) -> list[tuple[int, int]]:
+        return [m.span() for m in re.finditer(r"\S+", text)]
 
 
 @pytest.fixture

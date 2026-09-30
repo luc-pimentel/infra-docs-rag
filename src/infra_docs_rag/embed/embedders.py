@@ -60,6 +60,7 @@ class Embedder(Protocol):
     query_prefix: str
     dimensions: int
     max_tokens: int  # longer inputs are cut off before embedding
+    special_tokens: int  # added around every input, such as [CLS] and [SEP]
     parameters: int
 
     def embed_documents(self, texts: list[str]) -> np.ndarray: ...
@@ -67,6 +68,8 @@ class Embedder(Protocol):
     def embed_queries(self, texts: list[str]) -> np.ndarray: ...
 
     def token_counts(self, texts: list[str]) -> list[int]: ...
+
+    def token_spans(self, text: str) -> list[tuple[int, int]]: ...
 
 
 class SentenceTransformerEmbedder:
@@ -84,6 +87,7 @@ class SentenceTransformerEmbedder:
         self.query_prefix = spec.query_prefix
         self.dimensions = self.model.get_embedding_dimension()
         self.max_tokens = self.model.max_seq_length
+        self.special_tokens = len(self.model.tokenizer("")["input_ids"])
         self.parameters = sum(p.numel() for p in self.model.parameters())
 
     def embed_documents(self, texts: list[str]) -> np.ndarray:
@@ -101,6 +105,13 @@ class SentenceTransformerEmbedder:
     def token_counts(self, texts: list[str]) -> list[int]:
         encoded = self.model.tokenizer(texts, add_special_tokens=True, truncation=False, verbose=False)
         return [len(ids) for ids in encoded["input_ids"]]
+
+    def token_spans(self, text: str) -> list[tuple[int, int]]:
+        """Where each of the model's tokens sits in `text`, as character offsets."""
+        encoded = self.model.tokenizer(
+            text, add_special_tokens=False, return_offsets_mapping=True, truncation=False, verbose=False
+        )
+        return [(start, end) for start, end in encoded["offset_mapping"]]
 
 
 def load_embedder(name: str) -> SentenceTransformerEmbedder:
