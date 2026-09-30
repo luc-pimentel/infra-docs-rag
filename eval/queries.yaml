@@ -1,0 +1,143 @@
+# Labelled queries for probing and comparing embedding models (`infra-docs-rag evaluate`).
+#
+# Each query names the sections that answer it, by source id and section title; a title that
+# repeats inside one document can be written as the end of its path, "Parent › Child". Each
+# hypothesis was written before its query was scored.
+#
+# The probe scores each query against a small set: the right sections of every query plus the
+# decoys at the bottom, picked to look like an answer without being one.
+
+queries:
+  - id: undo-release
+    kind: paraphrase
+    text: How do I undo a bad release?
+    expect:
+      source: k8s-deployment-md
+      sections:
+        - Rolling Back a Deployment
+        - Checking Rollout History of a Deployment
+        - Rolling Back to a Previous Revision
+    hypothesis: >-
+      Dense should win. "Undo a bad release" and "roll back a Deployment" share no words but mean
+      the same thing. The pausing decoy is about rollouts too, so the margin may be small.
+
+  - id: pod-not-scheduled
+    kind: paraphrase
+    text: Why won't my container get placed on any machine in the cluster?
+    expect:
+      source: k8s-debug-pods
+      sections: [My pod stays pending]
+    hypothesis: >-
+      Dense should win: "placed on a machine" is "scheduled onto a node" in other words. The risk
+      is "My pod stays waiting", which says the Pod was scheduled "but it can't run on that
+      machine".
+
+  - id: lock-config
+    kind: paraphrase
+    text: Can I lock my app settings so nobody can change them after they are created?
+    expect:
+      source: k8s-configmap
+      sections: [Immutable ConfigMaps]
+    hypothesis: >-
+      Dense should win: locking settings against change is what "immutable" means, and app
+      settings are what a ConfigMap holds. The decoy about mounted ConfigMaps being updated talks
+      about change from the other side.
+
+  - id: page-on-symptoms
+    kind: paraphrase
+    text: How do I avoid getting paged for problems users never notice?
+    expect:
+      source: prom-alerting-practices
+      sections: [What to alert on, Online serving systems]
+    hypothesis: >-
+      Dense should win: both sections say to page on what users feel, not on every cause. The
+      Naming decoy shares the alerting vocabulary but not the advice.
+
+  - id: keep-firing-for
+    kind: identifier
+    text: keep_firing_for
+    expect:
+      source: prom-alerting-rules-md
+      sections: [Defining alerting rules]
+    hypothesis: >-
+      Could hold: the tokenizer splits it into plain words (keep, firing, for) that the right
+      section also uses. Templating covers the same alerting rules without the key.
+
+  - id: progress-deadline
+    kind: identifier
+    text: progressDeadlineSeconds
+    expect:
+      source: k8s-deployment-md
+      sections: [Progress Deadline Seconds, Failed Deployment]
+    hypothesis: >-
+      Likely to miss: the tokenizer cuts it into "progress" plus fragments (de, ad, lines, ec,
+      ond, s), and Min Ready Seconds is a sibling field described with the same sentence shape.
+
+  - id: max-surge
+    kind: identifier
+    text: maxSurge
+    expect:
+      source: k8s-deployment-md
+      sections: [Rolling Update Deployment]
+    hypothesis: >-
+      Could go either way: the right section repeats maxSurge six times, but the key becomes
+      "max" plus fragments (sur, ge), and Recreate Deployment covers update strategies without it.
+
+  - id: external-name
+    kind: identifier
+    text: ExternalName
+    expect:
+      source: k8s-service
+      sections: ["type: ExternalName"]
+    hypothesis: >-
+      Should hold: it splits into two real words (external, name) and the right section uses it
+      seven times, though the other Service types are close look-alikes.
+
+  - id: argocd-client-qps
+    kind: identifier
+    text: ARGOCD_K8S_CLIENT_QPS
+    expect:
+      source: argocd-declarative-setup-md
+      sections: [Clusters]
+    hypothesis: >-
+      Should fail for every model: the key appears once, around token 626 of a 975-token section,
+      past the 512 tokens bge reads and the 256 MiniLM reads, so no model sees it. Only the rest of
+      the section, about cluster credentials, is left to match.
+
+  - id: argocd-requirements
+    kind: metadata
+    text: What do I need before installing Argo CD?
+    expect:
+      source: argocd-getting-started-stable
+      sections: [Requirements]
+    hypothesis: >-
+      Likely to miss: the Requirements section never says "Argo CD"; only the document title does.
+      "1. Install Argo CD" says it several times and is about installing.
+
+  - id: whitepaper-page
+    kind: metadata
+    text: What is on page 9 of the Cloud Native Security Whitepaper?
+    expect:
+      source: cncf-security-whitepaper
+      sections: [Cloud Native Layers]
+    hypothesis: >-
+      Should fail: cleaning removed the printed page numbers, so no chunk says "page 9"; the page
+      lives only in the page spans. Whichever whitepaper section sounds most like an overview wins.
+
+decoys:
+  - source: k8s-deployment-md
+    sections: [Pausing and Resuming a rollout of a Deployment, Min Ready Seconds, Recreate Deployment]
+  - source: k8s-debug-pods
+    sections: [My pod stays waiting, My pod is running but not doing what I told it to do]
+  - source: k8s-configmap
+    sections: [Mounted ConfigMaps are updated automatically]
+  - source: prom-alerting-practices
+    sections: [Naming]
+  - source: prom-alerting-rules-md
+    sections: [Templating]
+  - source: k8s-service
+    sections: ["type: ClusterIP", "type: NodePort"]
+  - source: argocd-getting-started-stable
+    sections: ["1. Install Argo CD", "2. Download Argo CD CLI"]
+  - source: cncf-security-whitepaper
+    sections: [Purpose, Introduction, Problem Analysis]
