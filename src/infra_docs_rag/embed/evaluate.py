@@ -18,8 +18,8 @@ import numpy as np
 import yaml
 from pydantic import BaseModel
 
+from ..chunk.chunks import USABLE, Chunk, Chunking, chunk_documents
 from ..ingest.models import Document
-from .chunks import USABLE, Chunk, section_chunks
 from .embedders import DEFAULT_MODEL, Embedder, load_embedder
 from .index import Hit, Index, Manifest, ModelMismatch, build, unit
 
@@ -30,6 +30,7 @@ KINDS: tuple[Kind, ...] = ("paraphrase", "identifier", "metadata")
 class Target(BaseModel):
     source: str  # source id from sources.yaml
     sections: list[str]  # section titles; a repeated title can be written as a path, "Parent › Child"
+    contains: str | None = None  # text a piece of a split section needs to answer, such as a config key
 
 
 class Query(BaseModel):
@@ -230,9 +231,10 @@ def machine() -> str:
     return f"{chip}, CPU only ({torch.get_num_threads()} threads), torch {torch.__version__}"
 
 
-def evaluate(docs: list[Document], query_set: QuerySet, models: list[str], index_dir: Path) -> Evaluation:
-    """Build every model's index, then probe, compare and mix them."""
-    chunks = section_chunks(docs)
+def evaluate(docs: list[Document], query_set: QuerySet, models: list[str]) -> Evaluation:
+    """Build every model's index of whole sections in memory, then probe, compare and mix them. The
+    indexes are not saved: `data/index/` holds what `embed` builds, with the current chunking."""
+    chunks = chunk_documents(docs, Chunking())  # whole sections, the stage before chunking
     version = docs[0].provenance.ingest_version
     probe_chunks, right = probe_set(query_set, chunks)
     embedders = {name: load_embedder(name) for name in models}
@@ -241,7 +243,6 @@ def evaluate(docs: list[Document], query_set: QuerySet, models: list[str], index
     comparisons: dict[str, Comparison] = {}
     for name, embedder in embedders.items():
         indexes[name] = build(embedder, chunks, version)
-        indexes[name].save(index_dir / name)
         probes[name] = probe(embedder, query_set, probe_chunks, right)
         comparisons[name] = compare(embedder, indexes[name], query_set)
         print(f"{name}: {comparisons[name].hits(1)}/{len(query_set.queries)} right section first")

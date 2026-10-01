@@ -27,6 +27,7 @@ class Source(BaseModel):
     type: SourceType
     url: str | None = None
     path: str | None = None  # local files, such as the broken-PDF fixtures
+    project: str | None = None  # the documentation set it belongs to, such as "Argo CD"
     license: str | None = None
     note: str | None = None
 
