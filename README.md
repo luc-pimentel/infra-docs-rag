@@ -22,7 +22,9 @@ Each stage ships into this repo, so the service grows with the checklist.
 
 **Search**
 
-- [ ] 04 · Top-k retrieval and index design
+- [x] 04 · Top-k retrieval and index design: a retriever with metadata filters applied before ranking, a
+  similarity threshold that returns nothing for questions the docs don't cover, and prompt-ready context
+  with numbered, cited passages, tuned on a 49-question benchmark ([report](reports/retrieval.md))
 - [ ] 05 · Hybrid search: dense + keyword
 - [ ] 06 · Reranking
 
@@ -102,6 +104,29 @@ the chunks were cut.
   scored. `evaluate` probes every model against a small hand-picked set of chunks, compares them on
   whole-section indexes it keeps in memory, and writes the [report](reports/embeddings.md).
 
+## Retrieval
+
+`retrieve` turns a question into the passages a generator reads. It embeds the question with the index's
+own model, keeps the chunks that match the filter, ranks them, drops any under the similarity threshold,
+and packs the top k in rank order, each under a numbered heading that names its project, section and
+pages, with a source list after them. An answer can then cite `[2]`, and the list says what `[2]` is.
+
+- **Filters:** `--project`, `--source`, `--section` and `--page` narrow the eligible chunks *before*
+  ranking, so the top k is the top k of what qualifies. `--post-filter` shows the alternative, filtering
+  the unfiltered top k, which can leave nothing.
+- **Threshold:** `--min-score` is the cosine similarity a chunk needs. Under it, the retriever returns no
+  passage rather than the least wrong one, which is how a question the docs don't cover gets "the docs
+  don't cover this" instead of a confident guess. The default, 0.50, is a floor that catches unrelated
+  questions and costs no answer; the report shows why a near miss needs a different signal.
+- **Budget:** `--budget` caps the tokens the passages add up to.
+- **Benchmark:** [`eval/retrieval.yaml`](eval/retrieval.yaml) holds 49 labelled questions: the embedding
+  stage's 11, 32 more written against the corpus, and 6 the corpus cannot answer. `evaluate-retrieval`
+  ranks every chunk for every question once and reads off what k, the threshold and the filters each
+  change, times exact search up to a million synthetic vectors, and writes the [report](reports/retrieval.md).
+
+`search` prints the same ranking as raw hits with their scores, and marks the ones the threshold would
+drop.
+
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew install tesseract`).
@@ -112,13 +137,16 @@ uv run infra-docs-rag all                # download the sources, ingest them, wr
 uv run infra-docs-rag chunk              # cut every document with each strategy, compare the chunks
 uv run infra-docs-rag embed              # embed the default chunks with bge-small (--model for another)
 uv run infra-docs-rag search "How do I undo a bad release?"
+uv run infra-docs-rag retrieve "What is on page 9 of the whitepaper?" --source cncf-security-whitepaper --page 9
 uv run infra-docs-rag evaluate           # compare the three models on whole sections, write the report
 uv run infra-docs-rag evaluate-chunking  # compare chunking strategies and sizes, write the report
+uv run infra-docs-rag evaluate-retrieval # run the retrieval benchmark on the default index, write the report
 uv run pytest
 ```
 
 Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, chunks to `data/chunks/`,
 indexes to `data/index/`, and the evidence to [`reports/ingestion.md`](reports/ingestion.md),
-[`reports/chunking.md`](reports/chunking.md) and [`reports/embeddings.md`](reports/embeddings.md).
+[`reports/chunking.md`](reports/chunking.md), [`reports/embeddings.md`](reports/embeddings.md) and
+[`reports/retrieval.md`](reports/retrieval.md).
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
 needs all three, about 660 MB).
