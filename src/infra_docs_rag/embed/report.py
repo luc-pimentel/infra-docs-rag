@@ -51,19 +51,29 @@ def block(text: str, language: str = "text") -> str:
     return f"{fence}{language}\n{text}\n{fence}\n"
 
 
-def format_hits(hits: list[Hit], snippet: int = 150) -> str:
+def format_hits(hits: list[Hit], snippet: int = 150, min_score: float | None = None) -> str:
+    """Numbered hits with their score, citation, URI and an excerpt; a hit under `min_score` says so."""
     lines: list[str] = []
     for hit in hits:
         body = hit.chunk.text.removeprefix(hit.chunk.section).strip()
-        lines += [f"{hit.rank}. {hit.score:.3f}  {hit.chunk.citation()}", f"   {hit.chunk.source_uri}"]
+        under = (
+            f"  (under the {min_score:.2f} threshold)"
+            if min_score is not None and hit.score < min_score
+            else ""
+        )
+        lines += [f"{hit.rank}. {hit.score:.3f}  {hit.chunk.citation()}{under}", f"   {hit.chunk.source_uri}"]
         lines += [f"   {excerpt(body, snippet)}", ""]
-    return "\n".join(lines).rstrip()
+    return "\n".join(lines).rstrip() or "(no chunk matches)"
 
 
-def format_search(manifest: Manifest, hits: list[Hit], snippet: int = 150) -> str:
-    """What `infra-docs-rag search` prints."""
-    header = f"{manifest.model_id} · {manifest.chunks} chunks · cosine similarity"
-    return header + "\n\n" + format_hits(hits, snippet)
+def format_search(
+    manifest: Manifest, hits: list[Hit], snippet: int = 150, note: str = "", min_score: float | None = None
+) -> str:
+    """What `infra-docs-rag search` prints. `note` names the retrieval settings in the header."""
+    header = f"{manifest.model_id} · {manifest.chunks} chunks · cosine similarity" + (
+        f" · {note}" if note else ""
+    )
+    return header + "\n\n" + format_hits(hits, snippet, min_score)
 
 
 def verdict(p: Probe, q: int) -> str:

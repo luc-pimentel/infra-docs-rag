@@ -71,15 +71,26 @@ class Index:
                 "are not comparable, so re-embed the corpus with the new model instead"
             )
 
-    def search(self, embedder: Embedder, query: str, k: int = 5) -> list[Hit]:
+    def search(
+        self, embedder: Embedder, query: str, k: int = 5, within: np.ndarray | None = None
+    ) -> list[Hit]:
         self.check(embedder)
-        return self.rank(embedder.embed_queries([query])[0], k)
+        return self.rank(embedder.embed_queries([query])[0], k, within)
 
-    def rank(self, query_vector: np.ndarray, k: int) -> list[Hit]:
-        """The k chunks closest to a query vector. It trusts the caller to pass a vector from the
-        index's own model; `search` is the entry point that checks."""
+    def rank(self, query_vector: np.ndarray, k: int, within: np.ndarray | None = None) -> list[Hit]:
+        """The k chunks closest to a query vector, among the ones `within` marks (one boolean per chunk;
+        every chunk when None). It trusts the caller to pass a vector from the index's own model;
+        `search` is the entry point that checks."""
         scores = self.vectors @ unit(query_vector)
-        order = np.argsort(-scores, kind="stable")[:k]
+        if within is None:
+            candidates = np.arange(len(self.chunks))
+        elif within.shape != (len(self.chunks),):
+            raise ValueError(
+                f"the mask marks {within.shape[0]} chunks but the index holds {len(self.chunks)}"
+            )
+        else:
+            candidates = np.flatnonzero(within)
+        order = candidates[np.argsort(-scores[candidates], kind="stable")[:k]]
         return [Hit(rank=n + 1, score=float(scores[i]), chunk=self.chunks[i]) for n, i in enumerate(order)]
 
     def save(self, directory: Path) -> None:

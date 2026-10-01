@@ -1,0 +1,552 @@
+# Labelled queries for the retrieval benchmark (`infra-docs-rag evaluate-retrieval`).
+#
+# The first eleven are the embedding stage's queries from `queries.yaml`, unchanged, so the numbers
+# stay comparable with the earlier reports. The rest were written against the corpus one source at a
+# time, and the last six ask about things the corpus does not cover: the right result for them is no
+# passage at all.
+#
+# Each in-scope query names the passages that answer it: a source id and section titles, as in
+# `queries.yaml` (a title that repeats inside one document is written as the end of its path,
+# "Parent › Child"). A query about one identifier also names it in `contains`: only a chunk that
+# includes the key answers it. For a document without headings, `sections: []` with `contains` means
+# the whole document, and only the piece that contains the text counts.
+#
+# A metadata query also carries the `filter` its wording implies: the project, document or page it is
+# really asking about. The benchmark applies it before and after ranking.
+#
+# Kinds: paraphrase (same meaning, different words), identifier (a key, flag or acronym), metadata
+# (the answer depends on something the text does not say), out-of-scope (no answer in the corpus).
+# Every hypothesis was written before its query was scored.
+
+queries:
+  # ── The embedding stage's queries ────────────────────────────────────────────────────────────────
+  - id: undo-release
+    kind: paraphrase
+    text: How do I undo a bad release?
+    expect:
+      source: k8s-deployment-md
+      sections:
+        - Rolling Back a Deployment
+        - Checking Rollout History of a Deployment
+        - Rolling Back to a Previous Revision
+    hypothesis: >-
+      Dense should win. "Undo a bad release" and "roll back a Deployment" share no words but mean
+      the same thing. The pausing decoy is about rollouts too, so the margin may be small.
+
+  - id: pod-not-scheduled
+    kind: paraphrase
+    text: Why won't my container get placed on any machine in the cluster?
+    expect:
+      source: k8s-debug-pods
+      sections: [My pod stays pending]
+    hypothesis: >-
+      Dense should win: "placed on a machine" is "scheduled onto a node" in other words. The risk
+      is "My pod stays waiting", which says the Pod was scheduled "but it can't run on that
+      machine".
+
+  - id: lock-config
+    kind: paraphrase
+    text: Can I lock my app settings so nobody can change them after they are created?
+    expect:
+      source: k8s-configmap
+      sections: [Immutable ConfigMaps]
+    hypothesis: >-
+      Dense should win: locking settings against change is what "immutable" means, and app
+      settings are what a ConfigMap holds. The decoy about mounted ConfigMaps being updated talks
+      about change from the other side.
+
+  - id: page-on-symptoms
+    kind: paraphrase
+    text: How do I avoid getting paged for problems users never notice?
+    expect:
+      source: prom-alerting-practices
+      sections: [What to alert on, Online serving systems]
+    hypothesis: >-
+      Dense should win: both sections say to page on what users feel, not on every cause. The
+      Naming decoy shares the alerting vocabulary but not the advice.
+
+  - id: keep-firing-for
+    kind: identifier
+    text: keep_firing_for
+    expect:
+      source: prom-alerting-rules-md
+      sections: [Defining alerting rules]
+      contains: keep_firing_for
+    hypothesis: >-
+      Could hold: the tokenizer splits it into plain words (keep, firing, for) that the right
+      section also uses. Templating covers the same alerting rules without the key.
+
+  - id: progress-deadline
+    kind: identifier
+    text: progressDeadlineSeconds
+    expect:
+      source: k8s-deployment-md
+      sections: [Progress Deadline Seconds, Failed Deployment]
+      contains: progressDeadlineSeconds
+    hypothesis: >-
+      Likely to miss: the tokenizer cuts it into "progress" plus fragments (de, ad, lines, ec,
+      ond, s), and Min Ready Seconds is a sibling field described with the same sentence shape.
+
+  - id: max-surge
+    kind: identifier
+    text: maxSurge
+    expect:
+      source: k8s-deployment-md
+      sections: [Rolling Update Deployment]
+      contains: maxSurge
+    hypothesis: >-
+      Could go either way: the right section repeats maxSurge six times, but the key becomes
+      "max" plus fragments (sur, ge), and Recreate Deployment covers update strategies without it.
+
+  - id: external-name
+    kind: identifier
+    text: ExternalName
+    expect:
+      source: k8s-service
+      sections: ["type: ExternalName"]
+      contains: ExternalName
+    hypothesis: >-
+      Should hold: it splits into two real words (external, name) and the right section uses it
+      seven times, though the other Service types are close look-alikes.
+
+  - id: argocd-client-qps
+    kind: identifier
+    text: ARGOCD_K8S_CLIENT_QPS
+    expect:
+      source: argocd-declarative-setup-md
+      sections: [Clusters]
+      contains: ARGOCD_K8S_CLIENT_QPS
+    hypothesis: >-
+      Should fail for every model: the key appears once, around token 626 of a 975-token section,
+      past the 512 tokens bge reads and the 256 MiniLM reads, so no model sees it. Only the rest of
+      the section, about cluster credentials, is left to match.
+
+  - id: argocd-requirements
+    kind: metadata
+    text: What do I need before installing Argo CD?
+    expect:
+      source: argocd-getting-started-stable
+      sections: [Requirements]
+    filter:
+      project: Argo CD
+    hypothesis: >-
+      Likely to miss: the Requirements section never says "Argo CD"; only the document title does.
+      "1. Install Argo CD" says it several times and is about installing.
+
+  - id: whitepaper-page
+    kind: metadata
+    text: What is on page 9 of the Cloud Native Security Whitepaper?
+    expect:
+      source: cncf-security-whitepaper
+      sections: [Cloud Native Layers]
+    filter:
+      source: cncf-security-whitepaper
+      page: 9
+    hypothesis: >-
+      Should fail: cleaning removed the printed page numbers, so no chunk says "page 9"; the page
+      lives only in the page spans. Whichever whitepaper section sounds most like an overview wins.
+
+  # ── Kubernetes ───────────────────────────────────────────────────────────────────────────────────
+  - id: static-pods
+    kind: paraphrase
+    text: Which pods does the kubelet run on its own, without the API server knowing about them?
+    expect:
+      source: k8s-pods
+      sections: [Static Pods]
+    hypothesis: >-
+      Should win: the section says static Pods are "managed directly by the kubelet daemon on a
+      specific node, without the API server observing them", which is the question in other words.
+      "Pods and controllers" describes the opposite case and is the decoy.
+
+  - id: pod-os-field
+    kind: identifier
+    text: .spec.os.name
+    expect:
+      source: k8s-pods
+      sections: [Pod OS]
+      contains: .spec.os.name
+    hypothesis: >-
+      Should hold: the field opens a short section that repeats it three times, and it splits into
+      plain pieces (spec, os, name). The other `.spec` fields in the Deployment document are the
+      look-alikes.
+
+  - id: headless-service
+    kind: paraphrase
+    text: How do I get a Service with no cluster IP and no load balancing in front of my pods?
+    expect:
+      source: k8s-service
+      sections: [Headless Services]
+    hypothesis: >-
+      Should win: the section opens with "you don't need load-balancing and a single Service IP".
+      "type: ClusterIP" mentions headless Services in passing and is the decoy.
+
+  - id: lb-class
+    kind: identifier
+    text: loadBalancerClass
+    expect:
+      source: k8s-service
+      sections: [Specifying class of load balancer implementation]
+      contains: loadBalancerClass
+    hypothesis: >-
+      Should hold: the key appears five times in the one section about it and splits into real
+      words (load, balancer, class). The other `type: LoadBalancer` subsections share the
+      vocabulary without the key.
+
+  - id: sticky-client
+    kind: paraphrase
+    text: Can I make sure a given client always lands on the same backend pod?
+    expect:
+      source: k8s-service
+      sections: [Session stickiness]
+    hypothesis: >-
+      Should win: "connections from a particular client are passed to the same Pod each time" is
+      the question restated, in a section short enough for nothing else to dilute it. "Traffic
+      distribution control" is the sibling decoy.
+
+  - id: configmap-env-key
+    kind: identifier
+    text: configMapKeyRef
+    expect:
+      source: k8s-configmap
+      sections: [Using Configmaps as environment variables, ConfigMaps and Pods]
+      contains: configMapKeyRef
+    hypothesis: >-
+      Should hold for the environment variables section, where the key comes early and twice; in
+      "ConfigMaps and Pods" it sits near the end of a long section, so only the piece that holds it
+      counts.
+
+  - id: configmap-live-update
+    kind: paraphrase
+    text: If I edit a ConfigMap, do the files already mounted in my running pod change?
+    expect:
+      source: k8s-configmap
+      sections: [Mounted ConfigMaps are updated automatically]
+    hypothesis: >-
+      Should win: the section says projected keys are "eventually updated as well" and describes
+      the kubelet's sync. "Immutable ConfigMaps" is about the case where they must not change, and
+      could come close.
+
+  - id: pod-terminating
+    kind: paraphrase
+    text: My pod has been stuck deleting for an hour. What is going on?
+    expect:
+      source: k8s-debug-pods
+      sections: [My pod stays terminating]
+    hypothesis: >-
+      Should win: "stuck in the Terminating state" after "a deletion has been issued" is the
+      situation described. The pending and waiting siblings share the "stuck" shape, so the margin
+      may be small.
+
+  - id: revision-history
+    kind: identifier
+    text: revisionHistoryLimit
+    expect:
+      source: k8s-deployment-md
+      sections: [Clean up Policy, Revision History Limit]
+      contains: revisionHistoryLimit
+    hypothesis: >-
+      Should hold: two short sections repeat the field and it splits into real words (revision,
+      history, limit). "Checking Rollout History of a Deployment" has the history without the key.
+
+  - id: pause-rollout
+    kind: paraphrase
+    text: Can I make several changes to a Deployment without each one starting a new rollout?
+    expect:
+      source: k8s-deployment-md
+      sections: [Pausing and Resuming a rollout of a Deployment, Paused]
+    hypothesis: >-
+      Should win: both sections say a paused Deployment takes template changes without triggering
+      rollouts. "Updating a Deployment" explains what does trigger one and is the decoy.
+
+  - id: canary
+    kind: paraphrase
+    text: How do I ship a new version to a small share of users before everyone gets it?
+    expect:
+      source: k8s-deployment-md
+      sections: [Canary deployments]
+    hypothesis: >-
+      Should win: "roll out releases to a subset of users or servers" is the same idea in a short
+      section. The rolling update and proportional scaling sections are about gradual rollouts of
+      a different kind.
+
+  - id: min-ready
+    kind: identifier
+    text: minReadySeconds
+    expect:
+      source: k8s-deployment-md
+      sections: [Min Ready Seconds]
+      contains: minReadySeconds
+    hypothesis: >-
+      Should hold: the field opens a 385-character section. "Progress Deadline Seconds" mentions it
+      once near its end and was the decoy in the progressDeadlineSeconds query; the roles are now
+      reversed.
+
+  # ── Prometheus ───────────────────────────────────────────────────────────────────────────────────
+  - id: promql-offset
+    kind: paraphrase
+    text: How do I ask PromQL for the value a metric had five minutes ago rather than now?
+    expect:
+      source: prom-querying-basics
+      sections: [Offset modifier]
+    hypothesis: >-
+      Should win, but "@ modifier" also shifts the evaluation time and "Duration expressions" talks
+      about offset durations, so either could come first.
+
+  - id: promql-regex
+    kind: paraphrase
+    text: Which regular expression syntax does PromQL use, and does a match have to cover the whole string?
+    expect:
+      source: prom-querying-basics
+      sections: [Regular expressions]
+    hypothesis: >-
+      Should win: RE2 and "fully anchored" are the section's only two sentences. "Instant vector
+      selectors" explains regex matchers at length and may pull ahead on sheer vocabulary.
+
+  - id: promql-slow-queries
+    kind: paraphrase
+    text: My graph times out when the query touches a lot of data. How do I keep it from overloading the server?
+    expect:
+      source: prom-querying-basics
+      sections: [Avoiding slow queries and overloads]
+    hypothesis: >-
+      Should win: "graphing it might time out or overload the server or browser" is nearly
+      verbatim. "Staleness", the other gotcha, shares the heading path.
+
+  - id: alert-for-clause
+    kind: paraphrase
+    text: How do I make an alert wait until its condition has held for ten minutes before it fires?
+    expect:
+      source: prom-alerting-rules-md
+      sections: [Defining alerting rules]
+    hypothesis: >-
+      Should win: the `for` clause is defined there as the time between first seeing the condition
+      and counting the alert as firing. "Templating" covers the same rules file without it.
+
+  - id: alert-templating
+    kind: identifier
+    text: $labels
+    expect:
+      source: prom-alerting-rules-md
+      sections: [Templating]
+      contains: $labels
+    hypothesis: >-
+      Should hold: the tokenizer drops the dollar sign and "labels" is a plain word the section
+      repeats seven times. "Defining alerting rules" uses labels in its example without the
+      variable.
+
+  - id: batch-job-alert
+    kind: paraphrase
+    text: When should a nightly batch job page someone?
+    expect:
+      source: prom-alerting-practices
+      sections: [Batch jobs]
+    hypothesis: >-
+      Should win: "page if the batch job has not succeeded recently enough" answers it directly.
+      "Offline processing" is the sibling about the same class of system.
+
+  - id: prom-naming
+    kind: metadata
+    text: What does the Prometheus documentation say about naming things?
+    expect:
+      source: prom-alerting-practices
+      sections: [Naming]
+    filter:
+      project: Prometheus
+    hypothesis: >-
+      Likely to miss without the filter: the question only says "naming", and Kubernetes sections
+      about DNS names, labels and the pod-template-hash use the word more. With the Prometheus
+      filter, the Naming section is the only candidate about names.
+
+  # ── Argo CD ──────────────────────────────────────────────────────────────────────────────────────
+  - id: argocd-initial-password
+    kind: paraphrase
+    text: Where does Argo CD keep the first admin password after installation?
+    expect:
+      source: argocd-getting-started-stable
+      sections: [4. Log in Using The CLI]
+    hypothesis: >-
+      Should win: the section says the initial password is "stored as clear text in the field
+      password in a secret named argocd-initial-admin-secret". "1. Install Argo CD" is the decoy
+      about installation.
+
+  - id: argocd-port-forward
+    kind: paraphrase
+    text: How do I open the Argo CD UI from my laptop without exposing the service outside the cluster?
+    expect:
+      source: argocd-getting-started-stable
+      sections: [Port Forwarding]
+    hypothesis: >-
+      Should win: "connect to the API server without exposing the service" is the point of the
+      section. "Service Type Load Balancer" and "Ingress" are the siblings that do expose it.
+
+  - id: argocd-skip-reconcile
+    kind: identifier
+    text: argocd.argoproj.io/skip-reconcile
+    expect:
+      source: argocd-declarative-setup-md
+      sections: [Skipping Cluster Reconciliation]
+      contains: skip-reconcile
+    hypothesis: >-
+      Should hold: the annotation appears four times in a section whose heading repeats
+      "reconcile", and the `argocd.argoproj.io` labels sit in the neighbouring Clusters section
+      without the suffix.
+
+  - id: argocd-self-managed-ssa
+    kind: paraphrase
+    text: What sync option is mandatory when Argo CD manages its own installation?
+    expect:
+      source: argocd-declarative-setup-md
+      sections: [Server-Side Apply Requirement]
+    hypothesis: >-
+      Should win: "you must enable the ServerSideApply=true sync option" is the answer. Its parent,
+      "Manage Argo CD Using Argo CD", describes the setup and is the decoy.
+
+  - id: argocd-app-of-apps
+    kind: paraphrase
+    text: Can one Argo CD application create other applications?
+    expect:
+      source: argocd-declarative-setup-md
+      sections: [App of Apps]
+    hypothesis: >-
+      Should win: "You can create an app that creates other apps" is the first sentence of a tiny
+      section. "Applications", its parent, is longer and talks about the same CRD.
+
+  - id: argocd-status-badge
+    kind: identifier
+    text: statusbadge.enabled
+    expect:
+      source: argocd-cm-yaml
+      sections: []
+      contains: statusbadge.enabled
+    hypothesis: >-
+      Should hold: the key sits in the first piece of the reference config, under a comment that
+      says what it enables, and nothing else in the corpus mentions badges. The file has no
+      headings, so only the piece that contains the key counts.
+
+  - id: argocd-cm-url
+    kind: metadata
+    text: In the argocd-cm reference config, which key sets the externally facing base URL?
+    expect:
+      source: argocd-cm-yaml
+      sections: []
+      contains: externally facing base URL
+    filter:
+      source: argocd-cm-yaml
+    hypothesis: >-
+      The question names the file, which is what the filter encodes. Without it, Getting Started's
+      "3. Access Argo CD" is about URLs for Argo CD and may outrank the first piece of the config,
+      whose comment says exactly "externally facing base URL".
+
+  # ── CNCF whitepapers ─────────────────────────────────────────────────────────────────────────────
+  - id: ransomware-steps
+    kind: paraphrase
+    text: What are the steps in handling a ransomware incident?
+    expect:
+      source: cncf-security-whitepaper
+      sections: [Ransomware Incident Response]
+    hypothesis: >-
+      Should win: the section lists the NIST incident response steps for ransomware. "Incident
+      Response" and "Preventing Ransomware attacks" are siblings with half the words each.
+
+  - id: whitepaper-audience
+    kind: metadata
+    text: Who is the Cloud Native Security Whitepaper written for?
+    expect:
+      source: cncf-security-whitepaper
+      sections: [Target Audience]
+    filter:
+      source: cncf-security-whitepaper
+    hypothesis: >-
+      Likely to miss without the filter: the supply chain paper's "PART 1: HOW TO READ THIS PAPER
+      AUDIENCE/PERSONA" is longer and more explicit about readers, and only the document title
+      tells the two papers apart. Filtered to the security whitepaper, Target Audience should be
+      first.
+
+  - id: two-party-review
+    kind: paraphrase
+    text: Should the person who wrote a change be allowed to approve it?
+    expect:
+      source: cncf-supply-chain-whitepaper
+      sections: [Enforce independent 2-party review]
+    hypothesis: >-
+      Should win: "The author(s) of a request may not also be the approver" is the answer. The
+      security whitepaper's "Code Review" is the cross-document look-alike.
+
+  - id: single-use-workers
+    kind: paraphrase
+    text: Why should a CI build runner be thrown away after a single job?
+    expect:
+      source: cncf-supply-chain-whitepaper
+      sections: [Build Workers Should be Single Use]
+    hypothesis: >-
+      Should win: "should only be used once before being thrown away", with the blast radius
+      argument, is the section. "Validate runtime security of build workers" shares the subject.
+
+  - id: vex
+    kind: identifier
+    text: VEX
+    expect:
+      source: cncf-supply-chain-whitepaper
+      sections: [VEX]
+      contains: VEX
+    hypothesis: >-
+      Should hold: the section defines Vulnerability Exploitability eXchange and repeats the
+      acronym. "Require SBOMs and VEX statements from third-party suppliers" uses it in its heading
+      and is the decoy.
+
+  - id: supply-chain-page
+    kind: metadata
+    text: What is on page 13 of the Software Supply Chain Best Practices paper?
+    expect:
+      source: cncf-supply-chain-whitepaper
+      sections: ["PART 2: OVERVIEW SECURING THE SOFTWARE SUPPLY CHAIN", Metadata, SBOM, CONCEPTS]
+    filter:
+      source: cncf-supply-chain-whitepaper
+      page: 13
+    hypothesis: >-
+      Should fail without the filter, like the other page question: no chunk says "page 13". With
+      the page filter the candidates are the four sections on that page, so one of them is first
+      by construction; the test is that the filter sees pages the text does not.
+
+  # ── Not in the corpus ────────────────────────────────────────────────────────────────────────────
+  - id: oos-terraform
+    kind: out-of-scope
+    text: How do I write a Terraform module that creates an S3 bucket?
+    hypothesis: >-
+      Nothing covers Terraform or S3. The nearest words are in the EKS and storage sections; their
+      scores should sit well under the in-scope answers'.
+
+  - id: oos-nginx-rate-limit
+    kind: out-of-scope
+    text: How do I rate-limit requests in the NGINX ingress controller?
+    hypothesis: >-
+      Ingress is mentioned by the Argo CD guide and rate limits by nothing. The Argo CD "Ingress"
+      section is short and may score moderately.
+
+  - id: oos-grafana
+    kind: out-of-scope
+    text: How do I build a Grafana dashboard panel for request latency?
+    hypothesis: >-
+      Prometheus sections about latency alerts share half the vocabulary, so this is a near miss
+      the threshold has to reject.
+
+  - id: oos-helm-values
+    kind: out-of-scope
+    text: How do I override a value in a Helm chart's values.yaml from the command line?
+    hypothesis: >-
+      The Argo CD "Helm" section is about Helm charts as sources and may score close to a real
+      answer. This is the hardest of the six to reject.
+
+  - id: oos-aws-iam-user
+    kind: out-of-scope
+    text: How do I create an IAM user with programmatic access in the AWS console?
+    hypothesis: >-
+      The EKS sections are full of IAM roles and policies, but about Argo CD's cluster access, not
+      console users. Another near miss.
+
+  - id: oos-sourdough
+    kind: out-of-scope
+    text: What is a good recipe for sourdough bread?
+    hypothesis: >-
+      Far from everything; any threshold that rejects nothing else should still reject this, and
+      its score sets the floor for what "unrelated" looks like.

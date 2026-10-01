@@ -1,5 +1,5 @@
-"""Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | evaluate |
-evaluate-chunking`, run from the repo root."""
+"""Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
+evaluate | evaluate-chunking | evaluate-retrieval`, run from the repo root."""
 
 import argparse
 import re
@@ -18,6 +18,10 @@ from .ingest.models import Document
 from .ingest.pipeline import run
 from .ingest.report import write_report
 from .ingest.sources import fetch, load_sources
+from .retrieve.evaluate import evaluate_retrieval, load_benchmark
+from .retrieve.report import format_context
+from .retrieve.report import write_report as write_retrieval_report
+from .retrieve.retriever import DEFAULT_RETRIEVAL, Filter, Retrieval, Retriever
 
 SOURCES = Path("sources.yaml")
 RAW_DIR = Path("data/raw")
@@ -26,8 +30,10 @@ REPORT = Path("reports/ingestion.md")
 CHUNKS_DIR = Path("data/chunks")
 INDEX_DIR = Path("data/index")
 QUERIES = Path("eval/queries.yaml")
+BENCHMARK = Path("eval/retrieval.yaml")
 EMBEDDINGS_REPORT = Path("reports/embeddings.md")
 CHUNKING_REPORT = Path("reports/chunking.md")
+RETRIEVAL_REPORT = Path("reports/retrieval.md")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -79,9 +85,34 @@ def embed(model: str) -> None:
         )
 
 
-def search(query: str, model: str, k: int) -> None:
-    index = Index.load(INDEX_DIR / model)
-    print(format_search(index.manifest, index.search(load_embedder(model), query, k)))
+def retriever(model: str) -> Retriever:
+    return Retriever(Index.load(INDEX_DIR / model), load_embedder(model))
+
+
+def search(query: str, model: str, retrieval: Retrieval) -> None:
+    """Every hit the retrieval would rank, scores included; the ones under the threshold say so."""
+    r = retriever(model)
+    context = r.retrieve(query, retrieval.model_copy(update={"min_score": None, "budget": None}))
+    hits = [s.hit for s in context.sources]
+    print(format_search(r.index.manifest, hits, note=retrieval.label, min_score=retrieval.min_score))
+
+
+def retrieve(query: str, model: str, retrieval: Retrieval) -> None:
+    """The passages a generator would read, numbered and cited."""
+    r = retriever(model)
+    print(format_context(r.index.manifest, r.retrieve(query, retrieval)))
+
+
+def retrieval_from(args: argparse.Namespace) -> Retrieval:
+    criteria = Filter(project=args.project, source=args.source, section=args.section, page=args.page)
+    min_score = None if args.min_score is not None and args.min_score < 0 else args.min_score
+    return Retrieval(
+        k=args.k,
+        min_score=min_score,
+        filter=criteria,
+        prefilter=not args.post_filter,
+        budget=getattr(args, "budget", None),
+    )
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -106,14 +137,50 @@ def main(argv: list[str] | None = None) -> None:
     embed_cmd = commands.add_parser(
         "embed", help=f"embed every chunk ({DEFAULT_CHUNKING.label}) into data/index/"
     )
-    search_cmd = commands.add_parser("search", help="print the chunks closest to a query")
-    search_cmd.add_argument("query")
-    search_cmd.add_argument("-k", type=int, default=5, help="how many chunks to print (default 5)")
-    for cmd in (chunk_cmd, embed_cmd, search_cmd):
+    search_cmd = commands.add_parser("search", help="print the chunks closest to a query, with their scores")
+    retrieve_cmd = commands.add_parser(
+        "retrieve", help="print the passages a generator would read for a query, numbered and cited"
+    )
+    threshold = (
+        f"default {DEFAULT_RETRIEVAL.min_score:.2f}"
+        if DEFAULT_RETRIEVAL.min_score is not None
+        else "default none"
+    )
+    for cmd in (search_cmd, retrieve_cmd):
+        cmd.add_argument("query")
+        cmd.add_argument(
+            "-k",
+            type=int,
+            default=DEFAULT_RETRIEVAL.k,
+            help=f"how many chunks (default {DEFAULT_RETRIEVAL.k})",
+        )
+        cmd.add_argument(
+            "--min-score",
+            type=float,
+            default=DEFAULT_RETRIEVAL.min_score,
+            help=f"cosine similarity a chunk needs; search marks the ones under it, retrieve drops them ({threshold}, -1 for none)",
+        )
+        cmd.add_argument("--project", help="only chunks from this documentation set, e.g. 'Argo CD'")
+        cmd.add_argument("--source", help="only chunks from this source id in sources.yaml")
+        cmd.add_argument(
+            "--section", help="only chunks under this heading ('Parent › Child' for a repeated one)"
+        )
+        cmd.add_argument("--page", type=int, help="only chunks that touch this PDF page")
+        cmd.add_argument(
+            "--post-filter",
+            action="store_true",
+            help="rank every chunk first, then drop what the filter rejects",
+        )
+    retrieve_cmd.add_argument("--budget", type=int, help="most tokens the passages may add up to")
+    for cmd in (chunk_cmd, embed_cmd, search_cmd, retrieve_cmd):
         cmd.add_argument("--model", choices=MODELS, default=DEFAULT_MODEL, help=f"default {DEFAULT_MODEL}")
     commands.add_parser("evaluate", help="probe and compare every model, write reports/embeddings.md")
     commands.add_parser(
         "evaluate-chunking", help="compare chunking strategies and sizes, write reports/chunking.md"
+    )
+    commands.add_parser(
+        "evaluate-retrieval",
+        help="run the retrieval benchmark on the default index, write reports/retrieval.md",
     )
     args = parser.parse_args(argv)
 
@@ -140,7 +207,9 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "embed":
             embed(args.model)
         elif args.command == "search":
-            search(args.query, args.model, args.k)
+            search(args.query, args.model, retrieval_from(args))
+        elif args.command == "retrieve":
+            retrieve(args.query, args.model, retrieval_from(args))
         elif args.command == "evaluate":
             evaluation = evaluate(load_documents(DOCUMENTS), load_queries(QUERIES), list(MODELS))
             write_embeddings_report(evaluation, EMBEDDINGS_REPORT)
@@ -151,5 +220,16 @@ def main(argv: list[str] | None = None) -> None:
                 benchmark(load_embedder(DEFAULT_MODEL), docs, queries, load_projects()), CHUNKING_REPORT
             )
             print(f"wrote {CHUNKING_REPORT}")
+        elif args.command == "evaluate-retrieval":
+            earlier = {q.id for q in load_queries(QUERIES).queries}
+            result = evaluate_retrieval(
+                Index.load(INDEX_DIR / DEFAULT_MODEL),
+                load_embedder(DEFAULT_MODEL),
+                load_documents(DOCUMENTS),
+                load_benchmark(BENCHMARK),
+                earlier,
+            )
+            write_retrieval_report(result, RETRIEVAL_REPORT)
+            print(f"wrote {RETRIEVAL_REPORT}")
     except (FileNotFoundError, ModelMismatch, ValueError) as error:
         parser.exit(1, f"error: {error}\n")

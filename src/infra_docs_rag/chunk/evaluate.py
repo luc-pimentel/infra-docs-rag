@@ -11,7 +11,7 @@ import statistics
 from dataclasses import dataclass
 
 from ..embed.embedders import Embedder
-from ..embed.evaluate import QuerySet
+from ..embed.evaluate import QuerySet, Target
 from ..embed.index import Hit, Index, build
 from ..ingest.models import Document
 from .chunks import DEFAULT_CHUNKING, Chunk, Chunking, Strategy, chunk_documents, has_text, usable
@@ -59,27 +59,33 @@ class Answer:
         return sum(overlap(f, s) for f in found for s in self.spans) / total
 
 
+def resolve_answer(target: Target, by_id: dict[str, Document], label: str) -> Answer:
+    """Where a target's answer sits in its document. A title has to match exactly one section with text
+    of its own, the same sections the embedding stage's chunks are. No sections at all means the whole
+    document, for a file without headings, and then `contains` says which piece of it answers."""
+    doc = by_id.get(target.source)
+    if doc is None:
+        raise ValueError(f"{label} names {target.source}, which is not a usable document")
+    if not target.sections:
+        if not target.contains:
+            raise ValueError(f"{label} names the whole of {target.source}; say what the chunk has to contain")
+        if target.contains not in doc.cleaned_text:
+            raise ValueError(f"{label}: {target.source} never says `{target.contains}`")
+        return Answer(target.source, [(0, len(doc.cleaned_text))], target.contains)
+    spans: list[Span] = []
+    for title in target.sections:
+        wanted = [part.strip() for part in title.split("›")]
+        matches = [s for s in doc.sections if s.path[-len(wanted) :] == wanted and has_text(doc, s)]
+        if len(matches) != 1:
+            raise ValueError(f"`{target.source} › {title}` matches {len(matches)} sections instead of one")
+        spans.append((matches[0].start, matches[0].end))
+    return Answer(target.source, spans, target.contains)
+
+
 def answers(query_set: QuerySet, docs: list[Document]) -> list[Answer]:
-    """Each query's answer, from the sections it names. A title has to match exactly one section with
-    text of its own, the same sections the embedding stage's chunks are."""
+    """Each query's answer, from the sections it names."""
     by_id = {d.source_id: d for d in usable(docs)}
-    found: list[Answer] = []
-    for query in query_set.queries:
-        target = query.expect
-        doc = by_id.get(target.source)
-        if doc is None:
-            raise ValueError(f"query {query.id} names {target.source}, which is not a usable document")
-        spans: list[Span] = []
-        for title in target.sections:
-            wanted = [part.strip() for part in title.split("›")]
-            matches = [s for s in doc.sections if s.path[-len(wanted) :] == wanted and has_text(doc, s)]
-            if len(matches) != 1:
-                raise ValueError(
-                    f"`{target.source} › {title}` matches {len(matches)} sections instead of one"
-                )
-            spans.append((matches[0].start, matches[0].end))
-        found.append(Answer(target.source, spans, target.contains))
-    return found
+    return [resolve_answer(q.expect, by_id, f"query {q.id}") for q in query_set.queries]
 
 
 def sections_touched(chunk: Chunk, doc: Document) -> int:
