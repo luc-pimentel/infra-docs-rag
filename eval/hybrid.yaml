@@ -1,0 +1,35 @@
+# This stage's own queries for `infra-docs-rag evaluate-hybrid`: questions where keyword search should
+# beat embeddings. They are appended to `eval/retrieval.yaml` (same schema, ids must not repeat) and
+# marked ★ in reports/hybrid-search.md.
+#
+# The retrieval stage's 14 identifier queries all land in the top 5 under cosine alone, so the ones
+# that go here have to be harder: a key with a near-identical neighbour (`loadBalancerIP` against
+# `loadBalancerClass`), a command flag (`--to-revision`), a metric name (`api_http_requests_total`),
+# an env var, an acronym that only one section spells out (`STRIDE`, `SPIFFE`), a key that appears
+# exactly once in a long reference file. Each query names the chunk that has to contain the key
+# (`contains`) and a hypothesis written before scoring.
+#
+# Rare identifiers in the index (each in one or two chunks), to pick from or to go beyond:
+#   Kubernetes:  --to-revision · --revision · --iptables-localhost-nodeports · hostPort · nodeSelector ·
+#                loadBalancerIP · endpointslice.kubernetes.io · SVCNAME · makeLinkVariables
+#   Prometheus:  max_over_time · track_timestamps_staleness · externalLabels · api_http_requests_total ·
+#                api_http_request_latencies_second · ALERTS
+#   Argo CD:     --dest-server · --insecure · --force-conflicts · requestedScopes · users.session.duration ·
+#                additionalUrls · inCluster · sts.amazonaws.com
+#   Whitepapers: STRIDE · SPIFFE
+#
+# Template for one entry (an identifier query's `text` is usually the identifier itself, or a short
+# question that contains it):
+#
+#   - id: to-revision-flag
+#     kind: identifier
+#     text: kubectl rollout undo --to-revision
+#     expect:
+#       source: k8s-deployment-md
+#       sections: [Rolling Back to a Previous Revision]
+#       contains: --to-revision
+#     hypothesis: >-
+#       BM25 should win: the flag appears in exactly one chunk, and the tokenizer keeps it whole.
+#       Dense sees "rollout undo" everywhere in the rollback sections and may rank the overview first.
+
+queries: []
