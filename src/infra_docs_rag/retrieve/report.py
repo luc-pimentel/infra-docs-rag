@@ -12,6 +12,7 @@ from ..embed.report import block, format_hits
 from ..ingest.report import cell, excerpt
 from .evaluate import K_GRID, KINDS, BenchmarkQuery, Evaluation, Filtered
 from .fusion import HybridHit
+from .rerank import RerankedHit
 from .retriever import Context, Filter
 
 # What each kind of question tests; true whatever the scores come out as.
@@ -60,6 +61,15 @@ def format_context(manifest: Manifest, context: Context, snippet: int | None = N
             reason = f"no chunk matches {r.filter.label}"
         elif context.top_score is None:
             reason = f"none of the top {r.k} chunks matches {r.filter.label}"
+        elif (
+            r.rerank is not None
+            and r.rerank.min_relevance is not None
+            and (r.min_score is None or context.top_score >= r.min_score)
+        ):
+            reason = (
+                f"the reranker's best relevance was {context.top_relevance or 0:.2f}, under the "
+                f"{r.rerank.min_relevance:.2f} floor, so the candidates probably do not answer this question"
+            )
         else:
             reason = (
                 f"the closest chunk scored {context.top_score:.2f}, under the {r.min_score:.2f} threshold, so "
@@ -77,7 +87,10 @@ def format_context(manifest: Manifest, context: Context, snippet: int | None = N
 
 
 def sides(hit: Hit) -> str:
-    """What each side of a hybrid hit said: ` · cosine 0.62 (3rd) · bm25 7.1 (1st)`; nothing for a plain hit."""
+    """What each side of a hybrid hit said: ` · cosine 0.62 (3rd) · bm25 7.1 (1st)`; nothing for a plain hit.
+    A reranked hit says where the first stage had it, then what that stage's sides said."""
+    if isinstance(hit, RerankedHit):
+        return f" · first stage #{hit.first_rank} at {hit.first.score:.3f}{sides(hit.first)}"
     if not isinstance(hit, HybridHit):
         return ""
     lexical = f"bm25 {hit.lexical:.1f} (#{hit.lexical_rank})" if hit.lexical_rank else "bm25 0"

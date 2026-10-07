@@ -3,7 +3,8 @@ import pytest
 
 from infra_docs_rag.chunk.chunks import Chunk
 from infra_docs_rag.embed.index import build
-from infra_docs_rag.retrieve.retriever import Filter, Retrieval, Retriever, mask
+from infra_docs_rag.retrieve.rerank import RerankedHit
+from infra_docs_rag.retrieve.retriever import Filter, Rerank, Retrieval, Retriever, mask
 
 
 def chunk(section, text, source="src", project="Kubernetes", pages=None, parent="Doc") -> Chunk:
@@ -136,3 +137,41 @@ def test_modes_share_the_filter_and_the_floor(retriever):
 
     filtered = retriever.retrieve(QUERY, Retrieval(k=1, mode="hybrid", filter=Filter(source="paper")))
     assert [s.chunk.section for s in filtered.sources] == ["Layers"] and filtered.candidates == 1
+
+
+def test_a_rerank_reorders_the_first_stage_and_the_floors_read_each_stage(fake_embedder, fake_reranker):
+    embedder = fake_embedder()
+    index = build(embedder, CHUNKS, ingest_version="test")
+    with pytest.raises(ValueError, match="no reranker is loaded"):
+        Retriever(index, embedder).retrieve(
+            QUERY, Retrieval(k=2, rerank=Rerank(model="minilm-l6", candidates=3))
+        )
+    with pytest.raises(ValueError, match="'bge-base' is loaded"):
+        Retriever(index, embedder, fake_reranker("bge-base")).retrieve(
+            QUERY, Retrieval(k=2, rerank=Rerank(model="minilm-l6", candidates=3))
+        )
+
+    retriever = Retriever(index, embedder, fake_reranker("minilm-l6"))
+    plain = retriever.retrieve("layers of the stack", Retrieval(k=3, mode="dense"))
+    reranked = retriever.retrieve(
+        "layers of the stack", Retrieval(k=3, mode="dense", rerank=Rerank(model="minilm-l6", candidates=3))
+    )
+    assert reranked.sources[0].chunk.section == "Layers" and reranked.retrieval.label.endswith("over 3")
+    first = reranked.sources[0].hit
+    assert isinstance(first, RerankedHit) and first.score == pytest.approx(1.0)  # every query word is there
+    assert first.first_rank == [s.chunk.section for s in plain.sources].index("Layers") + 1
+    assert reranked.top_score == pytest.approx(first.first.score) and reranked.top_relevance == pytest.approx(
+        1.0
+    )
+    assert retriever.last_rerank is not None and retriever.last_rerank.scored == 3
+
+    strict = retriever.retrieve(
+        "layers of the stack",
+        Retrieval(k=3, mode="dense", rerank=Rerank(model="minilm-l6", candidates=3, min_relevance=0.9)),
+    )
+    assert [s.chunk.section for s in strict.sources] == ["Layers"] and strict.below == 2
+    nothing = retriever.retrieve(
+        "sourdough",
+        Retrieval(k=3, mode="dense", rerank=Rerank(model="minilm-l6", candidates=3, min_relevance=0.5)),
+    )
+    assert nothing.empty and nothing.top_relevance == 0.0

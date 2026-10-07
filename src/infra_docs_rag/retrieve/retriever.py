@@ -12,6 +12,10 @@ Which ranking the decisions sit on is the `mode`: `dense` is the index's cosine 
 BM25 over the same chunks (`lexical.py`), and `hybrid` fuses the two (`fusion.py`), each hit keeping
 both component scores. The threshold is a cosine floor wherever there is a cosine score: the hit's own
 score in dense mode, its dense component in hybrid mode; lexical mode has none.
+
+A `rerank` on top reads the first stage's top `candidates` with a cross-encoder (`rerank.py`) and
+reorders them by relevance; the cosine floor still reads the first-stage hit underneath, and an optional
+`min_relevance` floor reads the reranker's score.
 """
 
 from dataclasses import dataclass
@@ -25,6 +29,7 @@ from ..embed.embedders import Embedder
 from ..embed.index import Hit, Index
 from .fusion import Fusion, HybridHit, fuse
 from .lexical import Lexical
+from .rerank import DEFAULT_RERANKER, RERANKERS, Reranked, RerankedHit, Reranker, rerank
 
 Mode = Literal["dense", "lexical", "hybrid"]
 MODES: tuple[Mode, ...] = ("dense", "lexical", "hybrid")
@@ -69,6 +74,27 @@ def mask(chunks: list[Chunk], criteria: Filter) -> np.ndarray:
     return np.fromiter((criteria.matches(c) for c in chunks), dtype=bool, count=len(chunks))
 
 
+class Rerank(BaseModel):
+    """A second stage over the first: which cross-encoder, how many first-stage candidates it reads, and
+    the relevance under which a hit is dropped."""
+
+    model: str = DEFAULT_RERANKER
+    candidates: int = Field(default=20, ge=1)  # first-stage hits the reranker reads
+    min_relevance: float | None = Field(default=None, ge=0, le=1)  # reranker score a hit needs to be shown
+
+    @model_validator(mode="after")
+    def known(self) -> "Rerank":
+        if self.model not in RERANKERS:
+            raise ValueError(f"unknown reranker {self.model!r}; one of {', '.join(RERANKERS)}")
+        return self
+
+    @property
+    def label(self) -> str:
+        return f"rerank {self.model} over {self.candidates}" + (
+            f" · relevance {self.min_relevance:.2f}" if self.min_relevance is not None else ""
+        )
+
+
 class Retrieval(BaseModel):
     """How a question is answered from the index: how many chunks, how similar they have to be, which
     ones are eligible, and how much a generator gets to read."""
@@ -80,11 +106,14 @@ class Retrieval(BaseModel):
     budget: int | None = Field(default=None, ge=1)  # most tokens the passages may add up to
     mode: Mode = "dense"
     fusion: Fusion = Fusion()  # how hybrid mode merges the two rankings; ignored by the other modes
+    rerank: Rerank | None = None  # a second stage over the first's top candidates; None keeps the first
 
     @model_validator(mode="after")
     def thresholdable(self) -> "Retrieval":
         if self.mode == "lexical" and self.min_score is not None:
             raise ValueError("BM25 scores have no fixed scale, so lexical mode takes no min_score")
+        if self.rerank is not None and self.rerank.candidates < self.k:
+            raise ValueError(f"reranking {self.rerank.candidates} candidates cannot fill the top {self.k}")
         return self
 
     @property
@@ -92,6 +121,8 @@ class Retrieval(BaseModel):
         parts = [f"top {self.k}"]
         if self.mode != "dense":
             parts.append(self.mode + (f" ({self.fusion.label})" if self.mode == "hybrid" else ""))
+        if self.rerank is not None:
+            parts.append(self.rerank.label)
         if self.min_score is not None:
             parts.append(f"min {self.min_score:.2f}")
         if not self.filter.empty:
@@ -101,11 +132,16 @@ class Retrieval(BaseModel):
         return " · ".join(parts)
 
 
-# What `search` and `retrieve` do unless told otherwise: the top 5 of the fused ranking, cosine and BM25
-# weighted equally, with a floor under the cosine score that only catches questions unrelated to the
-# corpus. reports/retrieval.md shows how k and the floor were chosen, reports/hybrid-search.md the fusion.
+# What `search` and `retrieve` do unless told otherwise: the top 20 of the fused ranking, cosine and BM25
+# weighted equally, reordered by the bge-base cross-encoder down to the top 5, with a floor under the
+# cosine score that only catches questions unrelated to the corpus. reports/retrieval.md shows how k and
+# the floor were chosen, reports/hybrid-search.md the fusion, reports/reranking.md the reranker.
 DEFAULT_RETRIEVAL = Retrieval(
-    k=5, min_score=0.5, mode="hybrid", fusion=Fusion(strategy="weighted", alpha=0.5)
+    k=5,
+    min_score=0.5,
+    mode="hybrid",
+    fusion=Fusion(strategy="weighted", alpha=0.5),
+    rerank=Rerank(model="bge-base", candidates=20),
 )
 
 
@@ -138,8 +174,9 @@ class Context:
     sources: list[Source]
     candidates: int  # chunks eligible under the filter
     top_score: float | None  # the best hit's score before the threshold; None when nothing was eligible
-    below: int  # hits dropped for scoring under min_score
+    below: int  # hits dropped for scoring under min_score, or under the rerank's min_relevance
     over_budget: int  # hits left out because the budget was spent
+    top_relevance: float | None = None  # the best hit's reranker score, when there was a rerank
 
     @property
     def text(self) -> str:
@@ -155,21 +192,31 @@ class Context:
 
 
 def gate(hit: Hit) -> float | None:
-    """The score the threshold is checked against: the cosine similarity, wherever the hit has one."""
+    """The score the threshold is checked against: the cosine similarity, wherever the hit has one. A
+    reranked hit is checked on the first-stage hit underneath it."""
+    if isinstance(hit, RerankedHit):
+        return gate(hit.first)
     if isinstance(hit, HybridHit):
         return hit.dense
     return hit.score
+
+
+def relevance(hit: Hit) -> float | None:
+    """The reranker's score, for a reranked hit; None for any other."""
+    return hit.score if isinstance(hit, RerankedHit) else None
 
 
 class Retriever:
     """One index and the model it was built with, plus a BM25 index over the same chunks, answering
     questions with `retrieve`."""
 
-    def __init__(self, index: Index, embedder: Embedder) -> None:
+    def __init__(self, index: Index, embedder: Embedder, reranker: Reranker | None = None) -> None:
         index.check(embedder)
         self.index = index
         self.embedder = embedder
         self.lexical = Lexical.build(index.chunks)
+        self.reranker = reranker
+        self.last_rerank: Reranked | None = None  # what the last reranked ranking cost; for the benchmarks
 
     def retrieve(self, query: str, retrieval: Retrieval = DEFAULT_RETRIEVAL) -> Context:
         return self.pack(query, self.embedder.embed_queries([query])[0], retrieval)
@@ -177,7 +224,24 @@ class Retriever:
     def ranking(
         self, query: str, vector: np.ndarray, retrieval: Retrieval, k: int, within: np.ndarray | None = None
     ) -> list[Hit]:
-        """The top k under the retrieval's mode, among the chunks `within` marks (every chunk when None)."""
+        """The top k under the retrieval's mode, among the chunks `within` marks (every chunk when None).
+        With a rerank, the first stage's top `candidates` reordered by the reranker, at most k of them."""
+        if retrieval.rerank is None:
+            return self.first_stage(query, vector, retrieval, k, within)
+        if self.reranker is None:
+            raise ValueError(f"the retrieval asks for `{retrieval.rerank.label}` but no reranker is loaded")
+        if self.reranker.name != retrieval.rerank.model:
+            raise ValueError(
+                f"the retrieval asks for reranker {retrieval.rerank.model!r} but {self.reranker.name!r} is loaded"
+            )
+        candidates = self.first_stage(query, vector, retrieval, retrieval.rerank.candidates, within)
+        self.last_rerank = rerank(query, candidates, self.reranker, k)
+        return list(self.last_rerank.hits)
+
+    def first_stage(
+        self, query: str, vector: np.ndarray, retrieval: Retrieval, k: int, within: np.ndarray | None = None
+    ) -> list[Hit]:
+        """The top k under the retrieval's mode, before any reranking."""
         if retrieval.mode == "dense":
             return self.index.rank(vector, k, within)
         if retrieval.mode == "lexical":
@@ -204,6 +268,8 @@ class Retriever:
         hits, candidates = self.hits(query, vector, retrieval)
         floor = retrieval.min_score
         kept = [h for h in hits if floor is None or gate(h) >= floor]
+        if retrieval.rerank is not None and retrieval.rerank.min_relevance is not None:
+            kept = [h for h in kept if (relevance(h) or 0.0) >= retrieval.rerank.min_relevance]
         tokens = self.embedder.token_counts([h.chunk.text for h in kept]) if kept else []
         sources: list[Source] = []
         spent = 0
@@ -218,6 +284,7 @@ class Retriever:
             sources=sources,
             candidates=candidates,
             top_score=gate(hits[0]) if hits else None,
+            top_relevance=relevance(hits[0]) if hits else None,
             below=len(hits) - len(kept),
             over_budget=len(kept) - len(sources),
         )

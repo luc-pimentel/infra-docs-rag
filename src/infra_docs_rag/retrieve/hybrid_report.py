@@ -13,6 +13,9 @@ from .fusion import HybridHit
 from .report import answered_by_label
 from .retriever import DEFAULT_RETRIEVAL
 
+# What `retrieve` ranks before any reranking: the stage this report is about.
+FIRST_STAGE = DEFAULT_RETRIEVAL.model_copy(update={"rerank": None})
+
 
 def components(hit: Hit | None) -> str:
     """`0.62 (#3) · bm25 7.1 (#1)` for a hybrid hit, the plain score otherwise, `–` for nothing."""
@@ -168,7 +171,7 @@ def write_report(cmp: Comparison, output: Path) -> None:
     default = next((r for r in cmp.runs if name(r.retrieval) == name(DEFAULT_RETRIEVAL)), None)
     if default is None:
         add(
-            f"`retrieve` and `search` use `{DEFAULT_RETRIEVAL.label}`, which is not among the configurations "
+            f"The first stage of `retrieve` and `search` is `{FIRST_STAGE.label}`, which is not among the configurations "
             f"compared here; the benchmark picks `{name(best.retrieval)}`. **Update `DEFAULT_RETRIEVAL` in "
             "`src/infra_docs_rag/retrieve/retriever.py`, or add the default to `CONFIGURATIONS` in "
             "`src/infra_docs_rag/retrieve/compare.py`.**\n"
@@ -176,7 +179,7 @@ def write_report(cmp: Comparison, output: Path) -> None:
         default = best
     else:
         add(
-            f"`retrieve` and `search` use `{DEFAULT_RETRIEVAL.label}`"
+            f"The first stage of `retrieve` and `search` is `{FIRST_STAGE.label}`"
             + (
                 f"; the benchmark picks `{name(best.retrieval)}`. **Update `DEFAULT_RETRIEVAL` in "
                 "`src/infra_docs_rag/retrieve/retriever.py`.**"

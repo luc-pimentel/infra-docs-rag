@@ -1,0 +1,60 @@
+# Expectations for `infra-docs-rag evaluate-rerank`: what a cross-encoder should do to the questions the
+# first stage still gets wrong, or newly wrong, written before any reranker was run. Each names a query
+# from eval/retrieval.yaml or eval/hybrid.yaml, whether the right chunk is expected to move up, and why.
+# The report shows the rank before and after and whether each expectation held.
+#
+# The first stage is the hybrid search report's pick, `hybrid weighted α=0.5`. Under it the right chunk
+# is outside the top 5 for five questions, and two paraphrases dense had first slipped to third.
+
+expectations:
+  - id: api-http-requests-total
+    moves: true
+    hypothesis: >-
+      Should move up: the right chunk contains the metric name verbatim, and a cross-encoder sees the
+      exact string in the pair where the embedding only saw "api http requests". It sits 8th under the
+      first stage, so 20 candidates reach it.
+
+  - id: canary
+    moves: false
+    hypothesis: >-
+      Should stay out: the right chunk is 49th under the first stage, past 20 candidates and almost past
+      50. A reranker cannot promote what the first stage does not hand it. This is the recall ceiling.
+
+  - id: whitepaper-page
+    moves: false
+    hypothesis: >-
+      Should stay out: "what is on page 9" is a metadata question; nothing in the chunk's text says
+      which page it is on, and the context line names pages only as a range. The filter answers it,
+      not a reranker.
+
+  - id: whitepaper-audience
+    moves: true
+    hypothesis: >-
+      Could move up: 10th under the first stage, within 20 candidates, and the right chunk says who
+      the paper is for in plain words that a cross-encoder can match against "written for".
+
+  - id: argocd-requirements
+    moves: true
+    hypothesis: >-
+      Could move up: 13th under the first stage, within 20 candidates. The right chunk is the
+      Requirements list itself; a cross-encoder reading "what do I need before installing" against a
+      list of prerequisites should score it higher than the installation steps around it.
+
+  - id: pod-not-scheduled
+    moves: true
+    hypothesis: >-
+      Should move back up: dense had it first and the fusion pushed it to third behind chunks that
+      share words. A cross-encoder reads "placed on a machine" and "scheduled onto a node" in the same
+      pass, which is exactly what the fusion lost.
+
+  - id: lock-config
+    moves: true
+    hypothesis: >-
+      Should move back up, same reason: "lock settings so nobody can change them" against
+      "immutable ConfigMaps" is a paraphrase a cross-encoder handles and BM25 does not.
+
+  - id: stride
+    moves: false
+    hypothesis: >-
+      Should hold first: both stages already rank Threat Identification first, and the trap, the
+      References chunk that also says STRIDE, is a list of citations a cross-encoder should score low.
