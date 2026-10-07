@@ -164,5 +164,111 @@ def write_report(cmp: Comparison, output: Path) -> None:
         )
     add("")
 
+    add("## 5. The pick, and what still fails\n")
+    default = next((r for r in cmp.runs if name(r.retrieval) == name(DEFAULT_RETRIEVAL)), None)
+    if default is None:
+        add(
+            f"`retrieve` and `search` use `{DEFAULT_RETRIEVAL.label}`, which is not among the configurations "
+            f"compared here; the benchmark picks `{name(best.retrieval)}`. **Update `DEFAULT_RETRIEVAL` in "
+            "`src/infra_docs_rag/retrieve/retriever.py`, or add the default to `CONFIGURATIONS` in "
+            "`src/infra_docs_rag/retrieve/compare.py`.**\n"
+        )
+        default = best
+    else:
+        add(
+            f"`retrieve` and `search` use `{DEFAULT_RETRIEVAL.label}`"
+            + (
+                f"; the benchmark picks `{name(best.retrieval)}`. **Update `DEFAULT_RETRIEVAL` in "
+                "`src/infra_docs_rag/retrieve/retriever.py`.**"
+                if name(best.retrieval) != name(default.retrieval)
+                else ", the benchmark's pick: the most answers in the top "
+                f"{K} of the fusions in section 1, MRR as the tiebreak."
+            )
+        )
+        add("")
+
+    def rank_of(run: Run, q) -> int | None:
+        return run.rank(q.id)
+
+    def worse(a: int | None, b: int | None) -> bool:
+        """Whether rank `a` is worse than rank `b`; no rank at all is the worst."""
+        return b is not None and (a is None or a > b)
+
+    gains = [q for q in in_scope if worse(rank_of(dense, q), rank_of(default, q))]
+    losses = [q for q in in_scope if worse(rank_of(default, q), rank_of(dense, q))]
+    dropped = [q for q in losses if (rank_of(dense, q) or 0) <= K < (rank_of(default, q) or K + 1)]
+    kept = [q for q in loses if not worse(rank_of(default, q), rank_of(lexical, q))]
+    add(
+        f"Against dense alone, `{name(default.retrieval)}` ranks the right chunk higher for {len(gains)} "
+        f"of the {n} in-scope questions and lower for {len(losses)}: first for {default.hits(1, in_scope)} "
+        f"instead of {dense.hits(1, in_scope)}, in the top {K} for {default.hits(K, in_scope)} instead of "
+        f"{dense.hits(K, in_scope)}, MRR {default.mrr(in_scope):.2f} instead of {dense.mrr(in_scope):.2f}. "
+        f"Of the {len(loses)} questions where BM25 beats cosine (section 2), the fusion keeps BM25's rank or "
+        f"better for {len(kept)}. "
+        + (
+            f"No answer that dense had in the top {K} leaves it."
+            if not dropped
+            else f"The cost: {len(dropped)} answer{'s' if len(dropped) != 1 else ''} dense had in the top {K} "
+            + "leave it ("
+            + ", ".join(f"`{q.id}` {rank_of(dense, q)} → {rank(rank_of(default, q))}" for q in dropped)
+            + ")."
+        )
+        + (
+            " The ones it still ranks lower than dense, within the top "
+            f"{K}: "
+            + ", ".join(
+                f"`{q.id}` {rank_of(dense, q)} → {rank(rank_of(default, q))}"
+                for q in losses
+                if q not in dropped
+            )
+            + "."
+            if [q for q in losses if q not in dropped]
+            else ""
+        )
+        + "\n"
+    )
+
+    stage = [q for q in in_scope if q.id in extra]
+    if stage:
+        stage_loses = [q for q in stage if q in loses]
+        held = [q for q in stage if rank_of(dense, q) == 1 and rank_of(lexical, q) == 1]
+        add(
+            f"Of the {len(stage)} questions written for this stage, where keyword search was expected to win, "
+            f"BM25 beats cosine on {len(stage_loses)}"
+            + (
+                " ("
+                + ", ".join(f"`{q.id}` {rank_of(dense, q)} → {rank_of(lexical, q)}" for q in stage_loses)
+                + ")"
+                if stage_loses
+                else ""
+            )
+            + (
+                f" and both rank the right chunk first for {len(held)}"
+                + " ("
+                + ", ".join(f"`{q.id}`" for q in held)
+                + "): the identifier alone was enough for the "
+                "embedding too, so those hypotheses did not hold."
+                if held
+                else "."
+            )
+            + f" Under `{name(default.retrieval)}` the stage's questions land in the top {K} for "
+            f"{default.hits(K, stage)}/{len(stage)}, against {dense.hits(K, stage)}/{len(stage)} for dense.\n"
+        )
+
+    missing = [q for q in in_scope if rank_of(default, q) is None or rank_of(default, q) > K]
+    add(
+        f"Still outside the top {K} under the default: "
+        + (
+            ", ".join(f"`{q.id}` ({q.kind}, {rank(rank_of(default, q))})" for q in missing)
+            if missing
+            else "nothing"
+        )
+        + ". Out of scope, the floor still reads the top hit's cosine component, so the default shows nothing for "
+        f"{sum(silent(default, q.id, floor) for q in oos)}/{len(oos)} unanswerable questions, as dense does for "
+        f"{sum(silent(dense, q.id, floor) for q in oos)}/{len(oos)}; BM25 adds no abstention signal (section 4). "
+        "What carries over: the fused top `depth` is the candidate list the next stage reranks, and the questions "
+        "listed here are the ones a reranker has to move.\n"
+    )
+
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("\n".join(out).rstrip() + "\n")

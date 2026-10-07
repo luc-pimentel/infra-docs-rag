@@ -32,4 +32,133 @@
 #       BM25 should win: the flag appears in exactly one chunk, and the tokenizer keeps it whole.
 #       Dense sees "rollout undo" everywhere in the rollback sections and may rank the overview first.
 
-queries: []
+queries:
+  # ── Kubernetes ───────────────────────────────────────────────────────────────────────────────────
+  - id: to-revision-flag
+    kind: identifier
+    text: kubectl rollout undo --to-revision
+    expect:
+      source: k8s-deployment-md
+      sections: [Rolling Back to a Previous Revision]
+      contains: --to-revision
+    hypothesis: >-
+      BM25 should win: `to-revision` is in exactly one chunk and the tokenizer keeps it whole. Dense
+      sees "rollout undo" in every rollback section and may rank the history section, which says
+      "revision" five times, or the rollback overview first.
+
+  - id: loadbalancer-ip
+    kind: identifier
+    text: loadBalancerIP
+    expect:
+      source: k8s-service
+      sections: ["type: LoadBalancer"]
+      contains: loadBalancerIP
+    hypothesis: >-
+      BM25 should win: the key sits in one chunk, and the whole token tells it from
+      `loadBalancerClass`, which the benchmark's `lb-class` query already shows dense ranks first.
+      Dense reads both keys as "load balancer" and the class section, whose title is about load
+      balancers, is the near twin it will prefer.
+
+  - id: localhost-nodeports
+    kind: identifier
+    text: --iptables-localhost-nodeports
+    expect:
+      source: k8s-service
+      sections: ["type: NodePort Services via localhost"]
+      contains: --iptables-localhost-nodeports
+    hypothesis: >-
+      BM25 should win: the flag is in one chunk, whole. Dense reads "iptables localhost nodeports"
+      and the parent `type: NodePort` section, which is about node ports and kube-proxy too, is
+      the decoy; the parts `iptables` and `nodeports` also appear there.
+
+  - id: make-link-variables
+    kind: identifier
+    text: makeLinkVariables
+    expect:
+      source: k8s-service
+      sections: [Environment variables]
+      contains: makeLinkVariables
+    hypothesis: >-
+      BM25 should win: the function name appears once, in the section about Service environment
+      variables. Dense reads "make link variables", which says nothing about Services or
+      environment, and may land on DNS or on the ConfigMap page's environment variable sections.
+
+  # ── Prometheus ───────────────────────────────────────────────────────────────────────────────────
+  - id: api-http-requests-total
+    kind: identifier
+    text: api_http_requests_total
+    expect:
+      source: prom-querying-basics
+      sections: [Avoiding slow queries and overloads]
+      contains: api_http_requests_total
+    hypothesis: >-
+      BM25 should win: the metric appears once, in a section about slow queries whose topic has
+      nothing to do with its name. Dense reads "api http requests total" and `http_requests_total`
+      is in nine other chunks of the same page, every selector example; the whole token is the
+      only thing that separates them.
+
+  - id: external-labels-var
+    kind: identifier
+    text: $externalLabels
+    expect:
+      source: prom-alerting-rules-md
+      sections: [Templating]
+      contains: externalLabels
+    hypothesis: >-
+      BM25 should win if the `$` stays glued on both sides: the tokenizer keeps `$externallabels`
+      whole in the chunk and in the query, and nothing else has it. Dense reads "external labels"
+      and the alerting rules page says "labels" in every section. Written without the `$`, the
+      whole token would not match and only the parts `external` and `labels` would.
+
+  # ── Argo CD ──────────────────────────────────────────────────────────────────────────────────────
+  - id: dest-server
+    kind: identifier
+    text: argocd app create --dest-server
+    expect:
+      source: argocd-getting-started-stable
+      sections: [Creating Apps Via CLI]
+      contains: --dest-server
+    hypothesis: >-
+      BM25 should win: `dest-server` is in one chunk. Dense sees "create app" in the UI section
+      and in the heading chunk of "6. Create An Application From A Git Repository", which say the
+      same thing in words, and may rank them above the one with the command.
+
+  - id: users-session-duration
+    kind: identifier
+    text: users.session.duration
+    expect:
+      source: argocd-cm-yaml
+      sections: []
+      contains: users.session.duration
+    hypothesis: >-
+      BM25 should win: the key appears once, in the first piece of the reference config, whole.
+      Dense reads "user session duration" and may prefer Getting Started's login section, the
+      declarative setup's `argocd-rbac-cm` text, or the security whitepaper's access pages; the
+      config file has no headings, so only the piece with the key counts.
+
+  - id: sts-amazonaws
+    kind: identifier
+    text: sts.amazonaws.com
+    expect:
+      source: argocd-declarative-setup-md
+      sections: [Argo CD Management Role]
+      contains: sts.amazonaws.com
+    hypothesis: >-
+      Could hold for BM25: the whole token is in one chunk, but the parts `sts` and `amazonaws`
+      are in four or five EKS chunks that all look alike (`sts:AssumeRole`, ARNs, trust policies),
+      and dense cannot tell those chunks apart either. Whichever side lands it, the margin will be
+      the whole token.
+
+  # ── Whitepapers ──────────────────────────────────────────────────────────────────────────────────
+  - id: stride
+    kind: identifier
+    text: STRIDE
+    expect:
+      source: cncf-security-whitepaper
+      sections: [Threat Identification]
+      contains: STRIDE
+    hypothesis: >-
+      BM25 should win but may hit the wrong chunk: `stride` is in two chunks, Threat Identification
+      and the References appendix, and only the first answers. Dense has no meaning for a bare
+      acronym and "threat model" is in eleven chunks across both whitepapers, so it may rank any
+      of them. The References chunk is the trap for both sides.
