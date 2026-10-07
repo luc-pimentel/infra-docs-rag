@@ -155,3 +155,46 @@ def test_the_evaluation_insists_on_the_default_chunking(fake_embedder, guide):
     )
     with pytest.raises(ValueError, match="run `infra-docs-rag embed`"):
         evaluate_retrieval(index, embedder, [guide], BenchmarkSet(queries=[]), sizes=(10,))
+
+
+def test_the_hybrid_comparison_reports_its_pick(fake_embedder, guide, tmp_path):
+    from infra_docs_rag.retrieve.compare import compare
+    from infra_docs_rag.retrieve.hybrid_report import write_report as write_hybrid_report
+    from infra_docs_rag.retrieve.retriever import DEFAULT_RETRIEVAL
+
+    embedder = fake_embedder(max_tokens=512)
+    chunks = chunk_documents([guide], DEFAULT_CHUNKING, embedder, {"guide": "Kubernetes"})
+    index = build(embedder, chunks, ingest_version="test", chunking=DEFAULT_CHUNKING)
+    bench = BenchmarkSet(
+        queries=[
+            BenchmarkQuery(
+                id="scale",
+                kind="paraphrase",
+                text="kubectl scale replicas",
+                expect=Target(source="guide", sections=["Scaling"]),
+                hypothesis="shares words",
+            ),
+            BenchmarkQuery(id="bread", kind="out-of-scope", text="sourdough recipe", hypothesis="nothing"),
+        ]
+    )
+    extra = [
+        BenchmarkQuery(
+            id="surge",
+            kind="identifier",
+            text="maxSurge",
+            expect=Target(source="guide", sections=["Rolling Update"], contains="maxSurge"),
+            hypothesis="BM25 should win: the key is in one chunk, whole",
+        )
+    ]
+    cmp = compare(index, embedder, [guide], bench, extra)
+    assert cmp.extra == ["surge"] and [q.id for q in cmp.in_scope] == ["scale", "surge"]
+    assert cmp.lexical.rank("surge") == 1 and cmp.lexical.rank("bread") is None
+    assert DEFAULT_RETRIEVAL.mode == "hybrid" and DEFAULT_RETRIEVAL.fusion.strategy == "weighted"
+    assert DEFAULT_RETRIEVAL.label == "top 5 · hybrid (weighted α=0.5 · depth 50) · min 0.50"
+
+    write_hybrid_report(cmp, tmp_path / "hybrid-search.md")
+    report = (tmp_path / "hybrid-search.md").read_text()
+    assert report.startswith("# Hybrid search report") and "1 written for this stage" in report
+    assert "## 5. The pick, and what still fails" in report
+    assert "`retrieve` and `search` use `top 5 · hybrid (weighted α=0.5 · depth 50) · min 0.50`" in report
+    assert "Of the 1 questions written for this stage" in report and "`surge`" in report

@@ -101,9 +101,12 @@ class Retrieval(BaseModel):
         return " · ".join(parts)
 
 
-# What `search` and `retrieve` do unless told otherwise: the top 5, with a floor under the cosine score
-# that only catches questions unrelated to the corpus. reports/retrieval.md shows how both were chosen.
-DEFAULT_RETRIEVAL = Retrieval(k=5, min_score=0.5)
+# What `search` and `retrieve` do unless told otherwise: the top 5 of the fused ranking, cosine and BM25
+# weighted equally, with a floor under the cosine score that only catches questions unrelated to the
+# corpus. reports/retrieval.md shows how k and the floor were chosen, reports/hybrid-search.md the fusion.
+DEFAULT_RETRIEVAL = Retrieval(
+    k=5, min_score=0.5, mode="hybrid", fusion=Fusion(strategy="weighted", alpha=0.5)
+)
 
 
 @dataclass

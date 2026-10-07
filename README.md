@@ -25,7 +25,9 @@ Each stage ships into this repo, so the service grows with the checklist.
 - [x] 04 · Top-k retrieval and index design: a retriever with metadata filters applied before ranking, a
   similarity threshold that returns nothing for questions the docs don't cover, and prompt-ready context
   with numbered, cited passages, tuned on a 49-question benchmark ([report](reports/retrieval.md))
-- [ ] 05 · Hybrid search: dense + keyword
+- [x] 05 · Hybrid search: a BM25 index over the same chunks, fused with the cosine ranking by reciprocal
+  rank or weighted score, compared on the benchmark plus ten questions written for keyword search to win
+  ([report](reports/hybrid-search.md))
 - [ ] 06 · Reranking
 
 **Answers**
@@ -107,7 +109,8 @@ the chunks were cut.
 ## Retrieval
 
 `retrieve` turns a question into the passages a generator reads. It embeds the question with the index's
-own model, keeps the chunks that match the filter, ranks them, drops any under the similarity threshold,
+own model, keeps the chunks that match the filter, ranks them (by the fused cosine and BM25 scores unless
+`--mode` says otherwise, see Hybrid search), drops any under the similarity threshold,
 and packs the top k in rank order, each under a numbered heading that names its project, section and
 pages, with a source list after them. An answer can then cite `[2]`, and the list says what `[2]` is.
 
@@ -127,6 +130,28 @@ pages, with a source list after them. An answer can then cite `[2]`, and the lis
 `search` prints the same ranking as raw hits with their scores, and marks the ones the threshold would
 drop.
 
+## Hybrid search
+
+Cosine similarity blurs exact terms: a config key, a flag, a metric name reads like its neighbours
+(`loadBalancerIP` like `loadBalancerClass`, `api_http_requests_total` like `http_requests_total`).
+A BM25 index over the same chunks ranks by the terms themselves, and `retrieve` and `search` fuse the
+two rankings by default.
+
+- **Tokenizer:** an identifier goes into the BM25 index whole and in parts, so `maxSurge` yields
+  `maxsurge`, `max` and `surge`: the parts let "max surge" reach it, the whole token tells it from
+  `maxUnavailable`.
+- **Fusion:** `--fusion rrf` adds `1 / (k + rank)` per list; `--fusion weighted` rescales each list's
+  scores to [0, 1] and adds them with `--alpha` on the dense side. The default is weighted, α=0.5,
+  over the top `--depth` of each ranking.
+- **Modes:** `--mode dense` is the cosine ranking alone, `--mode lexical` BM25 alone, `--mode hybrid`
+  the fusion. Filters apply before ranking in every mode. The threshold stays a cosine floor: in hybrid
+  mode it reads a hit's dense component, and lexical mode has none, since a BM25 score has no fixed
+  scale and a zero is not an abstention signal: a common word always matches something.
+- **Benchmark:** [`eval/hybrid.yaml`](eval/hybrid.yaml) adds ten identifier questions to the retrieval
+  benchmark, each with a hypothesis written first. `evaluate-hybrid` ranks every question under dense,
+  BM25 and four fusions and writes the [report](reports/hybrid-search.md): where dense loses, what the
+  fusion keeps and costs, and what still fails.
+
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew install tesseract`).
@@ -137,16 +162,18 @@ uv run infra-docs-rag all                # download the sources, ingest them, wr
 uv run infra-docs-rag chunk              # cut every document with each strategy, compare the chunks
 uv run infra-docs-rag embed              # embed the default chunks with bge-small (--model for another)
 uv run infra-docs-rag search "How do I undo a bad release?"
+uv run infra-docs-rag search loadBalancerIP --mode dense    # the cosine ranking alone; --mode lexical for BM25 alone
 uv run infra-docs-rag retrieve "What is on page 9 of the whitepaper?" --source cncf-security-whitepaper --page 9
 uv run infra-docs-rag evaluate           # compare the three models on whole sections, write the report
 uv run infra-docs-rag evaluate-chunking  # compare chunking strategies and sizes, write the report
 uv run infra-docs-rag evaluate-retrieval # run the retrieval benchmark on the default index, write the report
+uv run infra-docs-rag evaluate-hybrid    # compare dense, BM25 and fused rankings on the benchmark, write the report
 uv run pytest
 ```
 
 Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, chunks to `data/chunks/`,
 indexes to `data/index/`, and the evidence to [`reports/ingestion.md`](reports/ingestion.md),
-[`reports/chunking.md`](reports/chunking.md), [`reports/embeddings.md`](reports/embeddings.md) and
-[`reports/retrieval.md`](reports/retrieval.md).
+[`reports/chunking.md`](reports/chunking.md), [`reports/embeddings.md`](reports/embeddings.md),
+[`reports/retrieval.md`](reports/retrieval.md) and [`reports/hybrid-search.md`](reports/hybrid-search.md).
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
 needs all three, about 660 MB).

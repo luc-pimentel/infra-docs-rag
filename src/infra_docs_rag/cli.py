@@ -152,7 +152,9 @@ def main(argv: list[str] | None = None) -> None:
     embed_cmd = commands.add_parser(
         "embed", help=f"embed every chunk ({DEFAULT_CHUNKING.label}) into data/index/"
     )
-    search_cmd = commands.add_parser("search", help="print the chunks closest to a query, with their scores")
+    search_cmd = commands.add_parser(
+        "search", help="print the chunks that rank highest for a query, with their scores"
+    )
     retrieve_cmd = commands.add_parser(
         "retrieve", help="print the passages a generator would read for a query, numbered and cited"
     )
@@ -174,35 +176,36 @@ def main(argv: list[str] | None = None) -> None:
             type=float,
             help=f"cosine similarity a chunk needs; search marks the ones under it, retrieve drops them ({threshold}, -1 for none; lexical mode has none)",
         )
+        fusion = DEFAULT_RETRIEVAL.fusion
         cmd.add_argument(
             "--mode",
             choices=MODES,
-            default="dense",
-            help="dense ranks by cosine similarity, lexical by BM25, hybrid fuses the two (default dense)",
+            default=DEFAULT_RETRIEVAL.mode,
+            help=f"dense ranks by cosine similarity, lexical by BM25, hybrid fuses the two (default {DEFAULT_RETRIEVAL.mode})",
         )
         cmd.add_argument(
             "--fusion",
             choices=FUSIONS,
-            default=Fusion().strategy,
-            help=f"hybrid: how to merge (default {Fusion().strategy})",
+            default=fusion.strategy,
+            help=f"hybrid: how to merge (default {fusion.strategy})",
         )
         cmd.add_argument(
             "--alpha",
             type=float,
-            default=Fusion().alpha,
-            help=f"hybrid weighted: share of the dense score (default {Fusion().alpha})",
+            default=fusion.alpha,
+            help=f"hybrid weighted: share of the dense score (default {fusion.alpha})",
         )
         cmd.add_argument(
             "--rrf-k",
             type=int,
-            default=Fusion().rrf_k,
-            help=f"hybrid rrf: the rank constant (default {Fusion().rrf_k})",
+            default=fusion.rrf_k,
+            help=f"hybrid rrf: the rank constant (default {fusion.rrf_k})",
         )
         cmd.add_argument(
             "--depth",
             type=int,
-            default=Fusion().depth,
-            help=f"hybrid: candidates taken from each ranking (default {Fusion().depth})",
+            default=fusion.depth,
+            help=f"hybrid: candidates taken from each ranking (default {fusion.depth})",
         )
         cmd.add_argument("--project", help="only chunks from this documentation set, e.g. 'Argo CD'")
         cmd.add_argument("--source", help="only chunks from this source id in sources.yaml")
