@@ -1,5 +1,5 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
-evaluate | evaluate-chunking | evaluate-retrieval`, run from the repo root."""
+evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid`, run from the repo root."""
 
 import argparse
 import re
@@ -18,10 +18,14 @@ from .ingest.models import Document
 from .ingest.pipeline import run
 from .ingest.report import write_report
 from .ingest.sources import fetch, load_sources
+from .retrieve.compare import compare, load_all
 from .retrieve.evaluate import evaluate_retrieval, load_benchmark
-from .retrieve.report import format_context
+from .retrieve.fusion import STRATEGIES as FUSIONS
+from .retrieve.fusion import Fusion
+from .retrieve.hybrid_report import write_report as write_hybrid_report
+from .retrieve.report import format_context, format_hybrid_search
 from .retrieve.report import write_report as write_retrieval_report
-from .retrieve.retriever import DEFAULT_RETRIEVAL, Filter, Retrieval, Retriever
+from .retrieve.retriever import DEFAULT_RETRIEVAL, MODES, Filter, Retrieval, Retriever
 
 SOURCES = Path("sources.yaml")
 RAW_DIR = Path("data/raw")
@@ -34,6 +38,8 @@ BENCHMARK = Path("eval/retrieval.yaml")
 EMBEDDINGS_REPORT = Path("reports/embeddings.md")
 CHUNKING_REPORT = Path("reports/chunking.md")
 RETRIEVAL_REPORT = Path("reports/retrieval.md")
+HYBRID_QUERIES = Path("eval/hybrid.yaml")
+HYBRID_REPORT = Path("reports/hybrid-search.md")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -94,7 +100,10 @@ def search(query: str, model: str, retrieval: Retrieval) -> None:
     r = retriever(model)
     context = r.retrieve(query, retrieval.model_copy(update={"min_score": None, "budget": None}))
     hits = [s.hit for s in context.sources]
-    print(format_search(r.index.manifest, hits, note=retrieval.label, min_score=retrieval.min_score))
+    if retrieval.mode == "dense":
+        print(format_search(r.index.manifest, hits, note=retrieval.label, min_score=retrieval.min_score))
+    else:
+        print(format_hybrid_search(r.index.manifest, hits, retrieval.label))
 
 
 def retrieve(query: str, model: str, retrieval: Retrieval) -> None:
@@ -105,13 +114,19 @@ def retrieve(query: str, model: str, retrieval: Retrieval) -> None:
 
 def retrieval_from(args: argparse.Namespace) -> Retrieval:
     criteria = Filter(project=args.project, source=args.source, section=args.section, page=args.page)
-    min_score = None if args.min_score is not None and args.min_score < 0 else args.min_score
+    min_score = args.min_score
+    if min_score is None and args.mode != "lexical":  # not given: the default floor, where there is a cosine
+        min_score = DEFAULT_RETRIEVAL.min_score
+    if min_score is not None and min_score < 0:
+        min_score = None
     return Retrieval(
         k=args.k,
         min_score=min_score,
         filter=criteria,
         prefilter=not args.post_filter,
         budget=getattr(args, "budget", None),
+        mode=args.mode,
+        fusion=Fusion(strategy=args.fusion, alpha=args.alpha, rrf_k=args.rrf_k, depth=args.depth),
     )
 
 
@@ -157,8 +172,37 @@ def main(argv: list[str] | None = None) -> None:
         cmd.add_argument(
             "--min-score",
             type=float,
-            default=DEFAULT_RETRIEVAL.min_score,
-            help=f"cosine similarity a chunk needs; search marks the ones under it, retrieve drops them ({threshold}, -1 for none)",
+            help=f"cosine similarity a chunk needs; search marks the ones under it, retrieve drops them ({threshold}, -1 for none; lexical mode has none)",
+        )
+        cmd.add_argument(
+            "--mode",
+            choices=MODES,
+            default="dense",
+            help="dense ranks by cosine similarity, lexical by BM25, hybrid fuses the two (default dense)",
+        )
+        cmd.add_argument(
+            "--fusion",
+            choices=FUSIONS,
+            default=Fusion().strategy,
+            help=f"hybrid: how to merge (default {Fusion().strategy})",
+        )
+        cmd.add_argument(
+            "--alpha",
+            type=float,
+            default=Fusion().alpha,
+            help=f"hybrid weighted: share of the dense score (default {Fusion().alpha})",
+        )
+        cmd.add_argument(
+            "--rrf-k",
+            type=int,
+            default=Fusion().rrf_k,
+            help=f"hybrid rrf: the rank constant (default {Fusion().rrf_k})",
+        )
+        cmd.add_argument(
+            "--depth",
+            type=int,
+            default=Fusion().depth,
+            help=f"hybrid: candidates taken from each ranking (default {Fusion().depth})",
         )
         cmd.add_argument("--project", help="only chunks from this documentation set, e.g. 'Argo CD'")
         cmd.add_argument("--source", help="only chunks from this source id in sources.yaml")
@@ -181,6 +225,10 @@ def main(argv: list[str] | None = None) -> None:
     commands.add_parser(
         "evaluate-retrieval",
         help="run the retrieval benchmark on the default index, write reports/retrieval.md",
+    )
+    commands.add_parser(
+        "evaluate-hybrid",
+        help="compare dense, BM25 and fused rankings on the benchmark, write reports/hybrid-search.md",
     )
     args = parser.parse_args(argv)
 
@@ -231,5 +279,16 @@ def main(argv: list[str] | None = None) -> None:
             )
             write_retrieval_report(result, RETRIEVAL_REPORT)
             print(f"wrote {RETRIEVAL_REPORT}")
+        elif args.command == "evaluate-hybrid":
+            bench, extra = load_all(BENCHMARK, HYBRID_QUERIES)
+            comparison = compare(
+                Index.load(INDEX_DIR / DEFAULT_MODEL),
+                load_embedder(DEFAULT_MODEL),
+                load_documents(DOCUMENTS),
+                bench,
+                extra,
+            )
+            write_hybrid_report(comparison, HYBRID_REPORT)
+            print(f"wrote {HYBRID_REPORT}")
     except (FileNotFoundError, ModelMismatch, ValueError) as error:
         parser.exit(1, f"error: {error}\n")

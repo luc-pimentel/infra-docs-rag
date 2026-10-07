@@ -5,12 +5,13 @@ import re
 import statistics
 from pathlib import Path
 
-from ..chunk.evaluate import K
+from ..chunk.evaluate import Answer, K
 from ..chunk.report import listing, placed, rank
-from ..embed.index import Manifest
+from ..embed.index import Hit, Manifest
 from ..embed.report import block, format_hits
 from ..ingest.report import cell, excerpt
-from .evaluate import K_GRID, KINDS, Evaluation, Filtered
+from .evaluate import K_GRID, KINDS, BenchmarkQuery, Evaluation, Filtered
+from .fusion import HybridHit
 from .retriever import Context, Filter
 
 # What each kind of question tests; true whatever the scores come out as.
@@ -70,15 +71,38 @@ def format_context(manifest: Manifest, context: Context, snippet: int | None = N
         lines += [s.heading, excerpt(s.chunk.text, snippet) if snippet else s.chunk.text, ""]
     lines.append("Sources")
     for s in context.sources:
-        lines.append(f"[{s.n}] {s.hit.score:.3f}  {s.chunk.citation()} · {s.tokens} tokens")
+        lines.append(f"[{s.n}] {s.hit.score:.3f}  {s.chunk.citation()} · {s.tokens} tokens{sides(s.hit)}")
         lines.append(f"    {s.chunk.source_uri}")
     return "\n".join(lines)
 
 
+def sides(hit: Hit) -> str:
+    """What each side of a hybrid hit said: ` · cosine 0.62 (3rd) · bm25 7.1 (1st)`; nothing for a plain hit."""
+    if not isinstance(hit, HybridHit):
+        return ""
+    lexical = f"bm25 {hit.lexical:.1f} (#{hit.lexical_rank})" if hit.lexical_rank else "bm25 0"
+    return f" · cosine {hit.dense:.3f} (#{hit.dense_rank}) · {lexical}"
+
+
+def format_hybrid_search(manifest: Manifest, hits: list[Hit], label: str, snippet: int = 150) -> str:
+    """What `infra-docs-rag search --mode hybrid` prints: the fused ranking, each hit with both sides."""
+    lines = [f"{manifest.model_id} · {manifest.chunks} chunks · {label}", ""]
+    for hit in hits:
+        body = hit.chunk.text.removeprefix(hit.chunk.section).strip()
+        lines += [
+            f"{hit.rank}. {hit.score:.4f}  {hit.chunk.citation()}{sides(hit)}",
+            f"   {hit.chunk.source_uri}",
+        ]
+        lines += [f"   {excerpt(body, snippet)}", ""]
+    return "\n".join(lines).rstrip() or "(no chunk matches)"
+
+
 def answered_by(ev: Evaluation, query_id: str) -> str:
     """`k8s-service › Headless Services` and 2 more, or what a whole-document label needs."""
-    answer = ev.answers[query_id]
-    query = next(q for q in ev.benchmark.queries if q.id == query_id)
+    return answered_by_label(ev.answers[query_id], next(q for q in ev.benchmark.queries if q.id == query_id))
+
+
+def answered_by_label(answer: Answer, query: BenchmarkQuery) -> str:
     assert query.expect is not None
     if not query.expect.sections:
         return f"`{answer.source}`, the piece that says `{cell(answer.contains)}`"

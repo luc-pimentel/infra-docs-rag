@@ -117,3 +117,22 @@ def test_the_retriever_refuses_another_models_index(fake_embedder):
     index = build(fake_embedder("a"), CHUNKS, ingest_version="test")
     with pytest.raises(Exception, match="not comparable"):
         Retriever(index, fake_embedder("b"))
+
+
+def test_modes_share_the_filter_and_the_floor(retriever):
+    plain = retriever.retrieve(QUERY, Retrieval(k=2, mode="lexical"))
+    assert [s.chunk.section for s in plain.sources] == ["Rollback", "Layers"]  # Scaling shares no term
+    assert plain.retrieval.label == "top 2 · lexical"
+    with pytest.raises(ValueError, match="lexical mode takes no min_score"):
+        Retrieval(mode="lexical", min_score=0.5)
+
+    hybrid = retriever.retrieve(QUERY, Retrieval(k=3, mode="hybrid", min_score=0.0))
+    assert hybrid.sources[0].chunk.section == "Rollback"
+    first = hybrid.sources[0].hit
+    assert (
+        first.dense == pytest.approx(hybrid.top_score) and first.lexical_rank == 1
+    )  # the floor sees the cosine side
+    assert hybrid.retrieval.label == "top 3 · hybrid (rrf k=60 · depth 50) · min 0.00"
+
+    filtered = retriever.retrieve(QUERY, Retrieval(k=1, mode="hybrid", filter=Filter(source="paper")))
+    assert [s.chunk.section for s in filtered.sources] == ["Layers"] and filtered.candidates == 1
