@@ -311,9 +311,11 @@ def evaluate_retrieval(
         timings.append((time.perf_counter() - started) * 1000)
 
     retriever = Retriever(index, embedder)
-    plain = [retriever.pack(q.text, vectors[q.id], DEFAULT_RETRIEVAL) for q in bench.queries]
+    # This stage's benchmark is about the first stage: what `retrieve` does before any reranking.
+    default = DEFAULT_RETRIEVAL.model_copy(update={"rerank": None})
+    plain = [retriever.pack(q.text, vectors[q.id], default) for q in bench.queries]
     with_filters = [
-        retriever.pack(q.text, vectors[q.id], DEFAULT_RETRIEVAL.model_copy(update={"filter": q.filter}))
+        retriever.pack(q.text, vectors[q.id], default.model_copy(update={"filter": q.filter}))
         for q in bench.queries
         if q.filter is not None
     ]
@@ -330,7 +332,7 @@ def evaluate_retrieval(
         filtered=filtered,
         scale=measure_scale(index.manifest.dimensions, K, sizes),
         embed_ms=statistics.median(timings),
-        default=DEFAULT_RETRIEVAL,
+        default=default,
         plain=plain,
         with_filters=with_filters,
     )

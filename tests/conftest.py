@@ -100,3 +100,33 @@ def make_doc():
         )
 
     return make
+
+
+class FakeReranker:
+    """A stand-in for a cross-encoder: no downloads, same output every run. Relevance is the share of
+    the query's words the text contains, so a text that repeats the question scores 1 and one that
+    shares nothing scores 0. `fixed` pins a relevance for a text that needs a known one."""
+
+    def __init__(self, name="fake-reranker", fixed=None):
+        self.name = name
+        self.model_id = f"test/{name}"
+        self.revision = "r1"
+        self.parameters = 0
+        self.max_tokens = 512
+        self.fixed = fixed or {}
+
+    def score(self, query: str, texts: list[str]) -> np.ndarray:
+        words = set(re.findall(r"\w+", query.lower()))
+        out = []
+        for text in texts:
+            if text in self.fixed:
+                out.append(self.fixed[text])
+                continue
+            found = set(re.findall(r"\w+", text.lower()))
+            out.append(len(words & found) / len(words) if words else 0.0)
+        return np.asarray(out, dtype=np.float32)
+
+
+@pytest.fixture
+def fake_reranker():
+    return FakeReranker

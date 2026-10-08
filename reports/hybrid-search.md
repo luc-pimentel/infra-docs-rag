@@ -127,7 +127,7 @@ In scope, the top BM25 score is 20.6 at the median and 3.8 at the lowest, over t
 
 ## 5. The pick, and what still fails
 
-`retrieve` and `search` use `top 5 · hybrid (weighted α=0.5 · depth 50) · min 0.50`, the benchmark's pick: the most answers in the top 5 of the fusions in section 1, MRR as the tiebreak.
+The first stage of `retrieve` and `search` is `top 5 · hybrid (weighted α=0.5 · depth 50) · min 0.50`, the benchmark's pick: the most answers in the top 5 of the fusions in section 1, MRR as the tiebreak.
 
 Against dense alone, `hybrid weighted α=0.5` ranks the right chunk higher for 13 of the 53 in-scope questions and lower for 8: first for 41 instead of 34, in the top 5 for 48 instead of 45, MRR 0.82 instead of 0.73. Of the 15 questions where BM25 beats cosine (section 2), the fusion keeps BM25's rank or better for 9. No answer that dense had in the top 5 leaves it. The ones it still ranks lower than dense, within the top 5: `pod-not-scheduled` 1 → 3, `lock-config` 1 → 3, `argocd-requirements` 8 → 13, `whitepaper-page` 39 → 49, `canary` 42 → 49, `promql-offset` 2 → 4, `promql-regex` 2 → 3, `supply-chain-page` 3 → 4.
 

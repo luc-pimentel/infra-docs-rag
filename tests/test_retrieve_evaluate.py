@@ -190,11 +190,84 @@ def test_the_hybrid_comparison_reports_its_pick(fake_embedder, guide, tmp_path):
     assert cmp.extra == ["surge"] and [q.id for q in cmp.in_scope] == ["scale", "surge"]
     assert cmp.lexical.rank("surge") == 1 and cmp.lexical.rank("bread") is None
     assert DEFAULT_RETRIEVAL.mode == "hybrid" and DEFAULT_RETRIEVAL.fusion.strategy == "weighted"
-    assert DEFAULT_RETRIEVAL.label == "top 5 · hybrid (weighted α=0.5 · depth 50) · min 0.50"
-
+    assert DEFAULT_RETRIEVAL.rerank is not None and DEFAULT_RETRIEVAL.rerank.model == "bge-base"
+    assert DEFAULT_RETRIEVAL.label == (
+        "top 5 · hybrid (weighted α=0.5 · depth 50) · rerank bge-base over 20 · min 0.50"
+    )
     write_hybrid_report(cmp, tmp_path / "hybrid-search.md")
     report = (tmp_path / "hybrid-search.md").read_text()
     assert report.startswith("# Hybrid search report") and "1 written for this stage" in report
     assert "## 5. The pick, and what still fails" in report
-    assert "`retrieve` and `search` use `top 5 · hybrid (weighted α=0.5 · depth 50) · min 0.50`" in report
+    assert (
+        "The first stage of `retrieve` and `search` is `top 5 · hybrid (weighted α=0.5 · depth 50) · min 0.50`"
+        in report
+    )
     assert "Of the 1 questions written for this stage" in report and "`surge`" in report
+
+
+def test_the_rerank_comparison_times_each_stage_and_reports_the_pick(
+    fake_embedder, fake_reranker, guide, tmp_path
+):
+    from infra_docs_rag.retrieve.rerank_compare import (
+        Expectation,
+        compare_rerank,
+        configurations,
+        load_expectations,
+    )
+    from infra_docs_rag.retrieve.rerank_report import write_report as write_rerank_report
+    from infra_docs_rag.retrieve.retriever import Retrieval
+
+    embedder = fake_embedder(max_tokens=512)
+    chunks = chunk_documents([guide], DEFAULT_CHUNKING, embedder, {"guide": "Kubernetes"})
+    index = build(embedder, chunks, ingest_version="test", chunking=DEFAULT_CHUNKING)
+    bench = BenchmarkSet(
+        queries=[
+            BenchmarkQuery(
+                id="scale",
+                kind="paraphrase",
+                text="kubectl scale replicas",
+                expect=Target(source="guide", sections=["Scaling"]),
+                hypothesis="shares words",
+            ),
+            BenchmarkQuery(
+                id="surge",
+                kind="identifier",
+                text="maxSurge",
+                expect=Target(source="guide", sections=["Rolling Update"], contains="maxSurge"),
+                hypothesis="exact word",
+            ),
+            BenchmarkQuery(id="bread", kind="out-of-scope", text="sourdough recipe", hypothesis="nothing"),
+        ]
+    )
+    first = Retrieval(k=2, mode="dense")
+    configs = configurations(first, depths=(3,))
+    assert [c.rerank.label if c.rerank else "first" for c in configs] == [
+        "first",
+        "rerank minilm-l6 over 3",
+        "rerank bge-base over 3",
+    ]
+    (tmp_path / "rerank.yaml").write_text(
+        "expectations:\n  - id: scale\n    moves: false\n    hypothesis: already first\n"
+    )
+    expectations = load_expectations(tmp_path / "rerank.yaml", bench.queries)
+    assert expectations == [Expectation(id="scale", moves=False, hypothesis="already first")]
+    with pytest.raises(ValueError, match="not a benchmark query"):
+        load_expectations(Path(__file__).parents[1] / "eval" / "rerank.yaml", bench.queries[:1])
+
+    rerankers = {"minilm-l6": fake_reranker("minilm-l6"), "bge-base": fake_reranker("bge-base")}
+    cmp = compare_rerank(index, embedder, [guide], bench, [], rerankers, expectations, configs=configs)
+    assert [r.reranker.name if r.reranker else None for r in cmp.runs] == [None, "minilm-l6", "bge-base"]
+    assert cmp.first.rank("scale") == 1 and cmp.first.outcomes["scale"].scored == 0
+    reranked = cmp.runs[1]
+    assert reranked.rank("surge") == 1 and reranked.outcomes["surge"].scored == 3
+    assert reranked.outcomes["surge"].rerank_ms >= 0 and reranked.outcomes["surge"].first_ms >= 0
+    assert reranked.rank("bread") is None and reranked.outcomes["bread"].top[0].score == 0.0
+    assert cmp.best() in cmp.runs and cmp.parameters == {"minilm-l6": 0, "bge-base": 0}
+    assert cmp.pick() in cmp.runs and cmp.pick(budget_ms=0.0) is cmp.first
+
+    write_rerank_report(cmp, tmp_path / "reranking.md")
+    report = (tmp_path / "reranking.md").read_text()
+    assert report.startswith("# Reranking report") and "## 1. Configurations" in report
+    assert "## 2. Where reranking changes the context" in report and "## 3. Latency and cost" in report
+    assert "## 4. Relevance as a signal" in report and "## 5. Expectations" in report
+    assert "## 6. The pick, and what still fails" in report and "`scale` | stays" in report

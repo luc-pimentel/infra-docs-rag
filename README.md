@@ -28,7 +28,9 @@ Each stage ships into this repo, so the service grows with the checklist.
 - [x] 05 · Hybrid search: a BM25 index over the same chunks, fused with the cosine ranking by reciprocal
   rank or weighted score, compared on the benchmark plus ten questions written for keyword search to win
   ([report](reports/hybrid-search.md))
-- [ ] 06 · Reranking
+- [x] 06 · Reranking: a cross-encoder reads the question with each of the first stage's top candidates
+  and reorders them; two rerankers at two depths compared on quality, latency and cost, with the
+  before-and-after context for every question it changes ([report](reports/reranking.md))
 
 **Answers**
 
@@ -110,7 +112,8 @@ the chunks were cut.
 
 `retrieve` turns a question into the passages a generator reads. It embeds the question with the index's
 own model, keeps the chunks that match the filter, ranks them (by the fused cosine and BM25 scores unless
-`--mode` says otherwise, see Hybrid search), drops any under the similarity threshold,
+`--mode` says otherwise, see Hybrid search, then reordered by a cross-encoder, see Reranking), drops any
+under the similarity threshold,
 and packs the top k in rank order, each under a numbered heading that names its project, section and
 pages, with a source list after them. An answer can then cite `[2]`, and the list says what `[2]` is.
 
@@ -152,6 +155,26 @@ two rankings by default.
   BM25 and four fusions and writes the [report](reports/hybrid-search.md): where dense loses, what the
   fusion keeps and costs, and what still fails.
 
+## Reranking
+
+The first stage scores the question and each chunk separately and compares vectors, so it can rank
+every chunk but cannot see how the words interact. A cross-encoder reads the question and one chunk
+together and scores how well the chunk answers it. That costs one model pass per pair, so `retrieve`
+runs it only over the first stage's top candidates and reorders them.
+
+- **Rerankers:** `bge-base` (`BAAI/bge-reranker-base`, 278M parameters) by default, `minilm-l6`
+  (`cross-encoder/ms-marco-MiniLM-L-6-v2`, 22M) for a twelfth of the cost; both pinned to a commit.
+  Scores are relevances in [0, 1] after a sigmoid, so a floor means the same for either.
+- **Flags:** `--rerank none|minilm-l6|bge-base`, `--candidates` for how many first-stage hits it reads
+  (20 by default), `--min-relevance` for a floor on its score. The cosine threshold still reads the
+  first-stage hit underneath each reranked one. `search` shows where the first stage had each hit.
+- **Benchmark:** `evaluate-rerank` runs the first stage alone and each reranker over 20 and 50
+  candidates on the 59 labelled questions, times each step, and writes the
+  [report](reports/reranking.md): every question whose context changes with the order before and
+  after, latency and cost per configuration, what the reranker's relevance says about questions the
+  corpus cannot answer, and whether the expectations in [`eval/rerank.yaml`](eval/rerank.yaml) held.
+  The default is the best configuration under two seconds a question.
+
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew install tesseract`).
@@ -163,17 +186,22 @@ uv run infra-docs-rag chunk              # cut every document with each strategy
 uv run infra-docs-rag embed              # embed the default chunks with bge-small (--model for another)
 uv run infra-docs-rag search "How do I undo a bad release?"
 uv run infra-docs-rag search loadBalancerIP --mode dense    # the cosine ranking alone; --mode lexical for BM25 alone
+uv run infra-docs-rag search "Why won't my pod get scheduled?" --rerank none   # the first stage, no cross-encoder
 uv run infra-docs-rag retrieve "What is on page 9 of the whitepaper?" --source cncf-security-whitepaper --page 9
 uv run infra-docs-rag evaluate           # compare the three models on whole sections, write the report
 uv run infra-docs-rag evaluate-chunking  # compare chunking strategies and sizes, write the report
 uv run infra-docs-rag evaluate-retrieval # run the retrieval benchmark on the default index, write the report
 uv run infra-docs-rag evaluate-hybrid    # compare dense, BM25 and fused rankings on the benchmark, write the report
+uv run infra-docs-rag evaluate-rerank    # rerank the first stage with each cross-encoder, write the report
 uv run pytest
 ```
 
 Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, chunks to `data/chunks/`,
 indexes to `data/index/`, and the evidence to [`reports/ingestion.md`](reports/ingestion.md),
 [`reports/chunking.md`](reports/chunking.md), [`reports/embeddings.md`](reports/embeddings.md),
-[`reports/retrieval.md`](reports/retrieval.md) and [`reports/hybrid-search.md`](reports/hybrid-search.md).
+[`reports/retrieval.md`](reports/retrieval.md), [`reports/hybrid-search.md`](reports/hybrid-search.md)
+and [`reports/reranking.md`](reports/reranking.md).
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
-needs all three, about 660 MB).
+needs all three, about 660 MB). The first `retrieve` or `search` downloads the default reranker
+(about 1.1 GB for bge-base; `evaluate-rerank` needs both, about 1.2 GB); `--rerank none` needs no
+download.

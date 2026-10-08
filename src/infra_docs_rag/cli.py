@@ -1,5 +1,5 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
-evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid`, run from the repo root."""
+evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank`, run from the repo root."""
 
 import argparse
 import re
@@ -25,7 +25,10 @@ from .retrieve.fusion import Fusion
 from .retrieve.hybrid_report import write_report as write_hybrid_report
 from .retrieve.report import format_context, format_hybrid_search
 from .retrieve.report import write_report as write_retrieval_report
-from .retrieve.retriever import DEFAULT_RETRIEVAL, MODES, Filter, Retrieval, Retriever
+from .retrieve.rerank import RERANKERS, load_reranker
+from .retrieve.rerank_compare import compare_rerank, load_expectations
+from .retrieve.rerank_report import write_report as write_rerank_report
+from .retrieve.retriever import DEFAULT_RETRIEVAL, MODES, Filter, Rerank, Retrieval, Retriever
 
 SOURCES = Path("sources.yaml")
 RAW_DIR = Path("data/raw")
@@ -40,6 +43,8 @@ CHUNKING_REPORT = Path("reports/chunking.md")
 RETRIEVAL_REPORT = Path("reports/retrieval.md")
 HYBRID_QUERIES = Path("eval/hybrid.yaml")
 HYBRID_REPORT = Path("reports/hybrid-search.md")
+RERANK_EXPECTATIONS = Path("eval/rerank.yaml")
+RERANK_REPORT = Path("reports/reranking.md")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -91,13 +96,14 @@ def embed(model: str) -> None:
         )
 
 
-def retriever(model: str) -> Retriever:
-    return Retriever(Index.load(INDEX_DIR / model), load_embedder(model))
+def retriever(model: str, retrieval: Retrieval) -> Retriever:
+    reranker = load_reranker(retrieval.rerank.model) if retrieval.rerank is not None else None
+    return Retriever(Index.load(INDEX_DIR / model), load_embedder(model), reranker)
 
 
 def search(query: str, model: str, retrieval: Retrieval) -> None:
     """Every hit the retrieval would rank, scores included; the ones under the threshold say so."""
-    r = retriever(model)
+    r = retriever(model, retrieval)
     context = r.retrieve(query, retrieval.model_copy(update={"min_score": None, "budget": None}))
     hits = [s.hit for s in context.sources]
     if retrieval.mode == "dense":
@@ -108,7 +114,7 @@ def search(query: str, model: str, retrieval: Retrieval) -> None:
 
 def retrieve(query: str, model: str, retrieval: Retrieval) -> None:
     """The passages a generator would read, numbered and cited."""
-    r = retriever(model)
+    r = retriever(model, retrieval)
     print(format_context(r.index.manifest, r.retrieve(query, retrieval)))
 
 
@@ -127,6 +133,9 @@ def retrieval_from(args: argparse.Namespace) -> Retrieval:
         budget=getattr(args, "budget", None),
         mode=args.mode,
         fusion=Fusion(strategy=args.fusion, alpha=args.alpha, rrf_k=args.rrf_k, depth=args.depth),
+        rerank=None
+        if args.rerank == "none"
+        else Rerank(model=args.rerank, candidates=args.candidates, min_relevance=args.min_relevance),
     )
 
 
@@ -207,6 +216,33 @@ def main(argv: list[str] | None = None) -> None:
             default=fusion.depth,
             help=f"hybrid: candidates taken from each ranking (default {fusion.depth})",
         )
+        second = DEFAULT_RETRIEVAL.rerank
+        cmd.add_argument(
+            "--rerank",
+            choices=["none", *RERANKERS],
+            default=second.model if second is not None else "none",
+            help="cross-encoder that reorders the first stage's top candidates "
+            f"(default {second.model if second is not None else 'none'})",
+        )
+        cmd.add_argument(
+            "--candidates",
+            type=int,
+            default=second.candidates if second is not None else Rerank().candidates,
+            help="first-stage hits the reranker reads "
+            f"(default {second.candidates if second is not None else Rerank().candidates})",
+        )
+        cmd.add_argument(
+            "--min-relevance",
+            type=float,
+            default=second.min_relevance if second is not None else None,
+            help="reranker score in [0, 1] a hit needs; retrieve drops the ones under it (default "
+            + (
+                f"{second.min_relevance:.2f}"
+                if second is not None and second.min_relevance is not None
+                else "none"
+            )
+            + ")",
+        )
         cmd.add_argument("--project", help="only chunks from this documentation set, e.g. 'Argo CD'")
         cmd.add_argument("--source", help="only chunks from this source id in sources.yaml")
         cmd.add_argument(
@@ -232,6 +268,10 @@ def main(argv: list[str] | None = None) -> None:
     commands.add_parser(
         "evaluate-hybrid",
         help="compare dense, BM25 and fused rankings on the benchmark, write reports/hybrid-search.md",
+    )
+    commands.add_parser(
+        "evaluate-rerank",
+        help="rerank the first stage's candidates with each cross-encoder, write reports/reranking.md",
     )
     args = parser.parse_args(argv)
 
@@ -293,5 +333,18 @@ def main(argv: list[str] | None = None) -> None:
             )
             write_hybrid_report(comparison, HYBRID_REPORT)
             print(f"wrote {HYBRID_REPORT}")
+        elif args.command == "evaluate-rerank":
+            bench, extra = load_all(BENCHMARK, HYBRID_QUERIES)
+            result = compare_rerank(
+                Index.load(INDEX_DIR / DEFAULT_MODEL),
+                load_embedder(DEFAULT_MODEL),
+                load_documents(DOCUMENTS),
+                bench,
+                extra,
+                {name: load_reranker(name) for name in RERANKERS},
+                load_expectations(RERANK_EXPECTATIONS, [*bench.queries, *extra]),
+            )
+            write_rerank_report(result, RERANK_REPORT)
+            print(f"wrote {RERANK_REPORT}")
     except (FileNotFoundError, ModelMismatch, ValueError) as error:
         parser.exit(1, f"error: {error}\n")
