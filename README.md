@@ -4,6 +4,10 @@ Ask questions about Kubernetes, Prometheus and Argo CD and get answers grounded 
 documentation, each one citing the document, page and section it came from. When the docs don't
 cover a question, the service says so instead of guessing.
 
+```sh
+uv run infra-docs-rag answer "How do I undo a bad release?"
+```
+
 **Status:** work in progress. Unticked items below are planned, not built.
 
 ## Roadmap
@@ -34,7 +38,10 @@ Each stage ships into this repo, so the service grows with the checklist.
 
 **Answers**
 
-- [ ] 07 · Grounded generation with citations
+- [x] 07 · Grounded generation with citations: Claude answers from the retrieved passages, every
+  statement tied by the API's citations to the passage it came from, and replies with a fixed sentence
+  when the passages do not cover the question; benchmarked on the labelled questions plus an adversarial
+  set ([report](reports/grounding.md))
 
 **Proof**
 
@@ -175,6 +182,29 @@ runs it only over the first stage's top candidates and reorders them.
   corpus cannot answer, and whether the expectations in [`eval/rerank.yaml`](eval/rerank.yaml) held.
   The default is the best configuration under two seconds a question.
 
+## Answers
+
+`answer` retrieves the passages, then asks Claude (`claude-opus-5-5`) to answer from them and nothing
+else. Each passage goes in as a document block with the API's citations enabled, so every cited span
+comes back tied to the passage it was taken from rather than to a number the model typed; the answer
+prints with `[n]` after each cited span and the sources under it.
+
+- **Abstention, twice:** a question whose top chunk is under the cosine floor gets *"The indexed
+  documentation does not cover this question."* without a call. One that passes the floor but whose
+  passages do not answer it gets the same sentence from the model, which the system prompt asks for
+  verbatim; a reply with no citation at all counts as one too.
+- **Grounding measures:** the share of answer text that carries a citation, the uncited sentences,
+  and, for a labelled question, whether a cited chunk is the right one.
+- **Prompt:** `--show-prompt` prints the request as the model sees it. `--effort` sets how hard the
+  model thinks (`medium` by default). Credentials come from `ANTHROPIC_API_KEY` or an `ant auth login`
+  profile; nothing is read from the repository.
+- **Benchmark:** `evaluate-grounding` answers the 59 labelled questions and the adversarial set in
+  [`eval/grounding.yaml`](eval/grounding.yaml) (instructions planted in the question, false premises,
+  memory bait, half-covered questions, a question in Portuguese), each with an expectation written first,
+  and writes the [report](reports/grounding.md): the prompt, eight answers in full, every question's
+  outcome, the out-of-scope and adversarial responses with an error analysis, and cost and latency.
+  `--limit N` runs the first N questions to try it cheaply.
+
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew install tesseract`).
@@ -187,20 +217,23 @@ uv run infra-docs-rag embed              # embed the default chunks with bge-sma
 uv run infra-docs-rag search "How do I undo a bad release?"
 uv run infra-docs-rag search loadBalancerIP --mode dense    # the cosine ranking alone; --mode lexical for BM25 alone
 uv run infra-docs-rag search "Why won't my pod get scheduled?" --rerank none   # the first stage, no cross-encoder
+uv run infra-docs-rag answer "What does keep_firing_for do?"                   # a cited answer, or the abstention sentence
+uv run infra-docs-rag answer "What does keep_firing_for do?" --show-prompt     # the request instead of the answer
 uv run infra-docs-rag retrieve "What is on page 9 of the whitepaper?" --source cncf-security-whitepaper --page 9
 uv run infra-docs-rag evaluate           # compare the three models on whole sections, write the report
 uv run infra-docs-rag evaluate-chunking  # compare chunking strategies and sizes, write the report
 uv run infra-docs-rag evaluate-retrieval # run the retrieval benchmark on the default index, write the report
 uv run infra-docs-rag evaluate-hybrid    # compare dense, BM25 and fused rankings on the benchmark, write the report
 uv run infra-docs-rag evaluate-rerank    # rerank the first stage with each cross-encoder, write the report
+uv run infra-docs-rag evaluate-grounding # answer every labelled and adversarial question, write the report (calls the API)
 uv run pytest
 ```
 
 Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, chunks to `data/chunks/`,
 indexes to `data/index/`, and the evidence to [`reports/ingestion.md`](reports/ingestion.md),
 [`reports/chunking.md`](reports/chunking.md), [`reports/embeddings.md`](reports/embeddings.md),
-[`reports/retrieval.md`](reports/retrieval.md), [`reports/hybrid-search.md`](reports/hybrid-search.md)
-and [`reports/reranking.md`](reports/reranking.md).
+[`reports/retrieval.md`](reports/retrieval.md), [`reports/hybrid-search.md`](reports/hybrid-search.md),
+[`reports/reranking.md`](reports/reranking.md) and [`reports/grounding.md`](reports/grounding.md).
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
 needs all three, about 660 MB). The first `retrieve` or `search` downloads the default reranker
 (about 1.1 GB for bge-base; `evaluate-rerank` needs both, about 1.2 GB); `--rerank none` needs no
