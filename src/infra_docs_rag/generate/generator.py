@@ -170,6 +170,7 @@ class ClaudeGenerator:
 # A typed citation: `[2]`, or several, at the end of a sentence, before or after its final punctuation;
 # its quote follows on the next line(s), opened by `>` and closed by `<`.
 MARKERS = re.compile(r"((?:\s*\[\d{1,2}\])+)\s*([.!?:;,]*)\s*$")
+QUOTE_LINES = 12  # how far a wrapped quote may run before an unclosed `>` line is taken alone
 
 
 def normal(text: str) -> str:
@@ -198,9 +199,18 @@ def parse_typed(text: str, context: Context) -> tuple[list[Segment], int]:
             continue
         if line.startswith(">"):
             parts = [line[1:].strip()]
-            while not parts[-1].endswith("<") and i < len(lines) and lines[i].strip():
-                parts.append(lines[i].strip())
-                i += 1
+            if not parts[-1].endswith("<"):  # wrapped: take the lines up to the one that closes it
+                close = next(
+                    (
+                        j
+                        for j in range(i, min(i + QUOTE_LINES, len(lines)))
+                        if lines[j].rstrip().endswith("<")
+                    ),
+                    None,
+                )
+                if close is not None:
+                    parts += [lines[j].strip() for j in range(i, close + 1) if lines[j].strip()]
+                    i = close + 1
             quote = " ".join(parts).removesuffix("<").strip()
             found = normal(quote)
             last = typed[-1] if typed else set()

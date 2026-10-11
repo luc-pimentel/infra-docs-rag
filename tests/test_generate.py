@@ -176,6 +176,17 @@ def test_a_typed_quote_lands_on_the_passage_that_contains_it_and_bare_numbers_co
     assert parse_typed("> Rollout and release layers <\n[2]\n", context) == ([], 2)  # nothing to attach to
     lone, n = parse_typed("Layers are listed.\n[2]\n> release layers of the cloud native stack <", context)
     assert [c.document for c in lone[0].citations] == [2] and n == 0
+    gapped, n = parse_typed(
+        "Layers are listed. [2]\n> Rollout and release layers\n\nof the cloud native stack. <\nNext line.",
+        context,
+    )
+    assert [c.document for c in gapped[0].citations] == [2] and n == 0
+    assert [s.text for s in gapped if s.text.strip()] == ["Layers are listed.", "Next line."]
+    never, n = parse_typed(
+        "Layers are listed. [2]\n> Rollout and release layers\nSomething else entirely.", context
+    )
+    assert [c.document for c in never[0].citations] == [2] and n == 0  # the first line alone still verifies
+    assert [s.text for s in never if s.text.strip()] == ["Layers are listed.", "Something else entirely."]
 
 
 @pytest.fixture
