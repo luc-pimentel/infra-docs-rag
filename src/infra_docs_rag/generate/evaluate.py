@@ -19,8 +19,9 @@ from ..ingest.models import Document
 from ..retrieve.evaluate import BenchmarkQuery, BenchmarkSet
 from ..retrieve.rerank import Reranker
 from ..retrieve.retriever import DEFAULT_RETRIEVAL, Retrieval, Retriever
-from .answer import Answer, answer
+from .answer import Answer, answer, marked
 from .generator import Generator
+from .judge import Judge, Judgement
 
 Expect = Literal["answer", "abstain", "partial"]
 
@@ -62,6 +63,7 @@ class Case:
     answer: Answer
     right_retrieved: bool | None  # a labelled right chunk was among the passages; None when unlabelled
     right_cited: bool | None  # a labelled right chunk was cited; None when unlabelled or no answer
+    judgement: Judgement | None = None  # the judge's reading of an answer; None when there was none
 
     @property
     def outcome(self) -> str:
@@ -95,6 +97,8 @@ class Grounding:
     generator: str  # model id
     cases: list[Case]
     prices: dict[str, float]
+    backend: str = ""  # how the model was called: the generator's name
+    judge: str | None = None  # the judge model that read the answers, when one did
 
     def of_kind(self, *kinds: str) -> list[Case]:
         return [c for c in self.cases if c.kind in kinds]
@@ -114,6 +118,18 @@ class Grounding:
     @property
     def called(self) -> list[Case]:
         return [c for c in self.cases if c.answer.generated is not None]
+
+    @property
+    def judged(self) -> list[Case]:
+        return [c for c in self.cases if c.judgement is not None]
+
+    @property
+    def unverified(self) -> int:
+        """Typed citations that did not check out against a passage, over the run."""
+        return sum(c.answer.generated.unverified for c in self.called)
+
+    def judge_cost(self) -> float:
+        return sum(c.judgement.cost_usd for c in self.judged)
 
     def count(self, cases: list[Case], outcome: str) -> int:
         return sum(c.outcome == outcome for c in cases)
@@ -146,6 +162,7 @@ def evaluate_grounding(
     reranker: Reranker | None = None,
     retrieval: Retrieval = DEFAULT_RETRIEVAL,
     limit: int | None = None,
+    judge: Judge | None = None,
 ) -> Grounding:
     retriever = Retriever(index, embedder, reranker)
     by_id = {d.source_id: d for d in usable(docs)}
@@ -178,8 +195,15 @@ def evaluate_grounding(
         if right is not None:
             retrieved = any(right.answered_by(s.chunk) for s in a.context.sources)
             cited = any(right.answered_by(c) for c in a.cited_chunks) if a.outcome == "answered" else None
-        cases.append(Case(qid, kind, expect, hypothesis, a, retrieved, cited))
-        print(f"{qid}: {a.outcome}" + (f", {a.cited_share:.0%} cited" if a.outcome == "answered" else ""))
+        judgement = judge.judge(a.context, text, marked(a)) if judge and a.outcome == "answered" else None
+        cases.append(Case(qid, kind, expect, hypothesis, a, retrieved, cited, judgement))
+        line = f"{qid}: {a.outcome}" + (f", {a.cited_share:.0%} cited" if a.outcome == "answered" else "")
+        if judgement is not None:
+            line += (
+                f" · {judge.name} grounded {judgement.grounded:.2f}, fabricated {judgement.fabricated:.2f}"
+            )
+        print(line)
+    judged = [c.judgement for c in cases if c.judgement is not None]
     return Grounding(
         manifest=index.manifest,
         machine=machine(),
@@ -187,4 +211,6 @@ def evaluate_grounding(
         generator=generator.model,
         cases=cases,
         prices=generator.prices,
+        backend=generator.name,
+        judge=judged[0].model if judged else None,
     )

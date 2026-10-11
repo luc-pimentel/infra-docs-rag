@@ -39,9 +39,9 @@ Each stage ships into this repo, so the service grows with the checklist.
 **Answers**
 
 - [x] 07 · Grounded generation with citations: Claude answers from the retrieved passages, every
-  statement tied by the API's citations to the passage it came from, and replies with a fixed sentence
-  when the passages do not cover the question; benchmarked on the labelled questions plus an adversarial
-  set ([report](reports/grounding.md))
+  statement tied to the passage it came from, and replies with a fixed sentence when the passages do
+  not cover the question; benchmarked on the labelled questions plus an adversarial set, each answer
+  read by a second model for grounding ([report](reports/grounding.md))
 
 **Proof**
 
@@ -185,9 +185,18 @@ runs it only over the first stage's top candidates and reorders them.
 ## Answers
 
 `answer` retrieves the passages, then asks Claude (`claude-opus-5-5`) to answer from them and nothing
-else. Each passage goes in as a document block with the API's citations enabled, so every cited span
-comes back tied to the passage it was taken from rather than to a number the model typed; the answer
-prints with `[n]` after each cited span and the sources under it.
+else; the answer prints with `[n]` after each cited span and the sources under it. Two ways to reach
+the model:
+
+- `--generator claude-opus-5-5` (the default): the API through the official SDK. Each passage goes in
+  as a document block with the API's citations enabled, so every cited span comes back tied to the
+  passage it was taken from rather than to a number the model typed. Credentials come from
+  `ANTHROPIC_API_KEY` or an `ant auth login` profile.
+- `--generator claude-code`: the same prompt through Claude Code's `claude -p` (no tools, one turn, an
+  empty working directory), billed to the subscription the CLI is logged into. There is no citation
+  API there, so the model types each citation as the passage number and a verbatim quote, and the
+  quote is checked against the passage: one that is not in it is dropped and the sentence counts as
+  uncited. A citation here is one that checked out, not one the model merely typed.
 
 - **Abstention, twice:** a question whose top chunk is under the cosine floor gets *"The indexed
   documentation does not cover this question."* without a call. One that passes the floor but whose
@@ -196,18 +205,25 @@ prints with `[n]` after each cited span and the sources under it.
 - **Grounding measures:** the share of answer text that carries a citation, the uncited sentences,
   and, for a labelled question, whether a cited chunk is the right one.
 - **Prompt:** `--show-prompt` prints the request as the model sees it. `--effort` sets how hard the
-  model thinks (`medium` by default). Credentials come from `ANTHROPIC_API_KEY` or an `ant auth login`
-  profile; nothing is read from the repository.
+  model thinks (`medium` by default). Nothing is read from the repository.
 - **Benchmark:** `evaluate-grounding` answers the 59 labelled questions and the adversarial set in
   [`eval/grounding.yaml`](eval/grounding.yaml) (instructions planted in the question, false premises,
   memory bait, half-covered questions, a question in Portuguese), each with an expectation written first,
   and writes the [report](reports/grounding.md): the prompt, eight answers in full, every question's
-  outcome, the out-of-scope and adversarial responses with an error analysis, and cost and latency.
-  `--limit N` runs the first N questions to try it cheaply.
+  outcome, the out-of-scope and adversarial responses with an error analysis, cost and latency, and
+  what the judge read. `--limit N` runs the first N questions to try it cheaply.
+- **Judge:** every answer is also read by Jev (TypeSafe AI's System One model) through the `jev` CLI, a model that
+  returns calibrated probabilities and never text: is every claim in the passages, was a fact added
+  that no passage gives, and does the answer name what the passages do not cover or reject a false
+  premise. The probabilities sit next to the mechanical checks and change no verdict; a reading in the
+  0.4–0.6 band is flagged as one the judge cannot tell and a person should read. `--no-judge` skips it.
 
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew install tesseract`).
+`answer` and `evaluate-grounding` need either an Anthropic API key or, with `--generator claude-code`,
+[Claude Code](https://docs.anthropic.com/en/docs/claude-code) logged in; the judge needs
+the `jev` CLI with `jev auth login` done once, or `--no-judge`.
 
 ```sh
 uv sync
@@ -225,7 +241,8 @@ uv run infra-docs-rag evaluate-chunking  # compare chunking strategies and sizes
 uv run infra-docs-rag evaluate-retrieval # run the retrieval benchmark on the default index, write the report
 uv run infra-docs-rag evaluate-hybrid    # compare dense, BM25 and fused rankings on the benchmark, write the report
 uv run infra-docs-rag evaluate-rerank    # rerank the first stage with each cross-encoder, write the report
-uv run infra-docs-rag evaluate-grounding # answer every labelled and adversarial question, write the report (calls the API)
+uv run infra-docs-rag evaluate-grounding                         # answer every labelled and adversarial question, write the report (calls the API)
+uv run infra-docs-rag evaluate-grounding --generator claude-code # the same through `claude -p`, on the Claude Code subscription
 uv run pytest
 ```
 

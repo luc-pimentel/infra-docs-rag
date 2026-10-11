@@ -18,10 +18,10 @@ from .embed.report import write_report as write_embeddings_report
 from .generate.answer import answer as grounded_answer
 from .generate.answer import format_answer
 from .generate.evaluate import evaluate_grounding, load_grounding
-from .generate.generator import DEFAULT_EFFORT, load_generator
+from .generate.generator import DEFAULT_EFFORT, GENERATORS, load_generator
 from .generate.generator import DEFAULT_MODEL as DEFAULT_GENERATOR
-from .generate.generator import MODELS as GENERATORS
-from .generate.prompt import render
+from .generate.judge import load_judge
+from .generate.prompt import SYSTEM, SYSTEM_TYPED, render
 from .generate.report import write_report as write_grounding_report
 from .ingest.models import Document
 from .ingest.pipeline import run
@@ -135,7 +135,8 @@ def answer(
     """A grounded answer, or the prompt that would produce one."""
     r = retriever(model, retrieval)
     if show_prompt:
-        print(render(r.retrieve(query, retrieval), query))
+        system = SYSTEM_TYPED if generator == "claude-code" else SYSTEM
+        print(render(r.retrieve(query, retrieval), query, system))
         return
     print(format_answer(grounded_answer(query, r, load_generator(generator, effort), retrieval)))
 
@@ -197,7 +198,8 @@ def main(argv: list[str] | None = None) -> None:
         "--generator",
         choices=list(GENERATORS),
         default=DEFAULT_GENERATOR,
-        help=f"default {DEFAULT_GENERATOR}",
+        help="; ".join(f"{name}: {how}" for name, how in GENERATORS.items())
+        + f" (default {DEFAULT_GENERATOR})",
     )
     answer_cmd.add_argument(
         "--effort",
@@ -324,10 +326,16 @@ def main(argv: list[str] | None = None) -> None:
         "--generator",
         choices=list(GENERATORS),
         default=DEFAULT_GENERATOR,
-        help=f"default {DEFAULT_GENERATOR}",
+        help="; ".join(f"{name}: {how}" for name, how in GENERATORS.items())
+        + f" (default {DEFAULT_GENERATOR})",
     )
     grounding_cmd.add_argument("--effort", default=DEFAULT_EFFORT, help=f"default {DEFAULT_EFFORT}")
     grounding_cmd.add_argument("--limit", type=int, help="only the first N questions, to try the run cheaply")
+    grounding_cmd.add_argument(
+        "--no-judge",
+        action="store_true",
+        help="skip the jev reading of each answer (grounded, fabricated, gap named)",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -419,6 +427,7 @@ def main(argv: list[str] | None = None) -> None:
                 load_generator(args.generator, args.effort),
                 load_reranker(second.model) if second is not None else None,
                 limit=args.limit,
+                judge=None if args.no_judge else load_judge(),
             )
             write_grounding_report(grounding, GROUNDING_REPORT)
             print(f"wrote {GROUNDING_REPORT}")

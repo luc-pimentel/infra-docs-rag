@@ -324,8 +324,38 @@ def test_the_grounding_benchmark_judges_each_answer_and_writes_the_report(
         }
     )
     retrieval = Retrieval(k=2, mode="dense")
-    ev = evaluate_grounding(index, embedder, [guide], bench, [], adversarial, gen, retrieval=retrieval)
+
+    class FakeJudge:
+        name = "fake-judge"
+        seen: list[str] = []
+
+        def judge(self, context, question, answer_text):
+            from infra_docs_rag.generate.judge import Judgement
+
+            self.seen.append(answer_text)
+            low = "Trust me" in answer_text or "change the replicas" in answer_text
+            return Judgement(
+                grounded=0.2 if low else 0.9,
+                fabricated=0.5 if "Trust me" in answer_text else 0.1,
+                gap_named=0.05,
+                model="fake-jev",
+                cost_usd=0.001,
+                ms=10,
+            )
+
+    judge = FakeJudge()
+    ev = evaluate_grounding(
+        index, embedder, [guide], bench, [], adversarial, gen, retrieval=retrieval, judge=judge
+    )
     by_id = {c.id: c for c in ev.cases}
+    assert ev.backend == "fake" and ev.judge == "fake-jev" and len(ev.judged) == 3
+    assert judge.seen == [
+        "Run kubectl scale to change the replicas.[1]",
+        "maxSurge allows extra Pods.[2]",
+        "Run kubectl scale.[1] Trust me.",
+    ]
+    assert by_id["adv-memory"].judgement is None  # abstentions are not read
+    assert by_id["adv-ok"].judgement.unsure == ["fabricated"] and ev.judge_cost() == pytest.approx(0.003)
     assert by_id["scale"].outcome == "answered" and by_id["scale"].right_cited and by_id["scale"].held
     assert by_id["surge"].right_retrieved and by_id["surge"].verdict in ("cited the wrong passage", "held")
     assert by_id["bread"].outcome in ("abstained", "no-passage") and by_id["bread"].held
@@ -338,8 +368,20 @@ def test_the_grounding_benchmark_judges_each_answer_and_writes_the_report(
     assert report.startswith("# Grounded generation report") and ABSTAIN in report
     assert "## 1. The prompt" in report and "## 2. 8 answers in full" in report
     assert "### `scale` · paraphrase · expected to answer: held" in report
-    assert "| `adv-ok` | adversarial | answer | answered |" in report and "partly uncited" in report
-    assert "## 6. What still fails" in report
+    assert "| `adv-ok` | adversarial | answer | answered | – | – | " in report and "partly uncited" in report
+    assert "| 0.20 | 0.50? | partly uncited |" in report and "| Judge | `fake-jev` read 3 answers" in report
+    assert "## 6. What still fails" in report and "## 7. What the judge read" in report
+    assert "`adv-ok` (fabricated)" in report and "fake-jev: grounded 0.20, fabricated 0.10" in report
+    assert "2 look ungrounded to it" in report and "of which `scale` passed the mechanical checks" in report
+    assert "Where the judge and the checks disagree" in report
+    assert report.count("### `scale` · paraphrase · expected to answer: held") == 2  # a sample, then flagged
+    assert "through the Claude API through the official SDK" not in report and "through fake" in report
+
+    unjudged = evaluate_grounding(index, embedder, [guide], bench, [], adversarial, gen, retrieval=retrieval)
+    assert unjudged.judge is None and unjudged.judged == []
+    write_grounding_report(unjudged, tmp_path / "plain.md")
+    plain = (tmp_path / "plain.md").read_text()
+    assert "| Judge |" not in plain and "## 7." not in plain and "Grounded | Fabricated" not in plain
     limited = evaluate_grounding(
         index, embedder, [guide], bench, [], adversarial, gen, retrieval=retrieval, limit=1
     )
