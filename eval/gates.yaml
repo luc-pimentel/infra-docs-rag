@@ -1,0 +1,69 @@
+# Regression gates for `infra-docs-rag evaluate-pipeline --baseline <run> --candidate <run>`. Each names
+# a metric from the evaluation (the names `evaluate-pipeline --list-metrics` prints) and a rule:
+#
+#   min / max         the candidate's value has to be at least / at most `value`
+#   no-drop / no-rise the candidate may not fall / rise past the baseline by more than `tolerance`
+#                     (in the metric's units, or as a share of the baseline with `relative: true`)
+#
+# A gate is critical unless it says otherwise: a critical failure blocks the change (exit code 1); a
+# non-critical one is a warning in the report. The tolerances are one question's worth on the 53
+# in-scope and 6 out-of-scope questions, so a single flipped answer is noise and two are a regression.
+
+gates:
+  # Abstention: the system must keep saying "not covered" when the corpus does not cover the question.
+  - metric: abstention.out_of_scope
+    rule: no-drop
+    why: every out-of-scope question abstained in v2; a drop means a confident answer with no basis
+
+  - metric: abstention.in_scope
+    rule: no-rise
+    tolerance: 0.02
+    why: a false abstention is a question the corpus answers and the system refused; one is noise
+
+  # Grounding: an answer has to rest on the passage the label says answers the question.
+  - metric: grounding.right_cited
+    rule: no-drop
+    tolerance: 0.02
+    why: the share of answers citing a right passage is the groundedness measure the labels back
+
+  - metric: grounding.judge_fabricated
+    rule: no-rise
+    tolerance: 0.02
+    why: the judge's "a fact was added" reading, calibrated in reports/calibration.md
+
+  - metric: grounding.cited_share_median
+    rule: min
+    value: 0.9
+    why: at the median an answer should be all but fully cited
+
+  # Retrieval: what the model reads has to include the right passage.
+  - metric: retrieval.right_retrieved
+    rule: no-drop
+    tolerance: 0.02
+    why: a right passage among the five read is the ceiling on everything downstream
+
+  - metric: retrieval.mrr
+    rule: no-drop
+    tolerance: 0.05
+    critical: false
+    why: rank matters less than presence once the model reads all five; a warning only
+
+  # Adversarial: the fixed expectations on the set written to break grounding.
+  - metric: abstention.adversarial_held
+    rule: min
+    value: 0.8
+    why: 9 of 10 adversarial expectations held in stage 07; under 8 is a prompt change gone wrong
+
+  # Cost and latency: quality is bought with time and money, and both are bounded.
+  - metric: cost.usd_per_1000
+    rule: no-rise
+    tolerance: 0.25
+    relative: true
+    critical: false
+    why: a quarter more per thousand questions is worth flagging, not blocking
+
+  - metric: latency.end_to_end_ms_median
+    rule: max
+    value: 15000
+    critical: false
+    why: fifteen seconds a question on CPU is the limit of what a person waits for

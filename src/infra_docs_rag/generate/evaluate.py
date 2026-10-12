@@ -64,6 +64,7 @@ class Case:
     right_retrieved: bool | None  # a labelled right chunk was among the passages; None when unlabelled
     right_cited: bool | None  # a labelled right chunk was cited; None when unlabelled or no answer
     judgement: Judgement | None = None  # the judge's reading of an answer; None when there was none
+    right_sources: list[bool] | None = None  # per passage in rank order, whether it answers; None unlabelled
 
     @property
     def outcome(self) -> str:
@@ -99,6 +100,7 @@ class Grounding:
     prices: dict[str, float]
     backend: str = ""  # how the model was called: the generator's name
     judge: str | None = None  # the judge model that read the answers, when one did
+    effort: str = ""  # how hard the generator was asked to think
 
     def of_kind(self, *kinds: str) -> list[Case]:
         return [c for c in self.cases if c.kind in kinds]
@@ -191,12 +193,13 @@ def evaluate_grounding(
     for qid, kind, text, expect, hypothesis, this in todo:
         a = answer(text, retriever, generator, this)
         right = answers.get(qid)
-        retrieved = cited = None
+        retrieved = cited = flags = None
         if right is not None:
-            retrieved = any(right.answered_by(s.chunk) for s in a.context.sources)
+            flags = [right.answered_by(s.chunk) for s in a.context.sources]
+            retrieved = any(flags)
             cited = any(right.answered_by(c) for c in a.cited_chunks) if a.outcome == "answered" else None
         judgement = judge.judge(a.context, text, marked(a)) if judge and a.outcome == "answered" else None
-        cases.append(Case(qid, kind, expect, hypothesis, a, retrieved, cited, judgement))
+        cases.append(Case(qid, kind, expect, hypothesis, a, retrieved, cited, judgement, flags))
         line = f"{qid}: {a.outcome}" + (f", {a.cited_share:.0%} cited" if a.outcome == "answered" else "")
         if judgement is not None:
             line += (
@@ -213,4 +216,5 @@ def evaluate_grounding(
         prices=generator.prices,
         backend=generator.name,
         judge=judged[0].model if judged else None,
+        effort=str(getattr(generator, "effort", "")),
     )

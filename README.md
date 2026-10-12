@@ -45,7 +45,10 @@ Each stage ships into this repo, so the service grows with the checklist.
 
 **Proof**
 
-- [ ] 08 · Evaluation: retrieval quality, groundedness, abstention and regression checks
+- [x] 08 · Evaluation: the benchmark as a versioned spec with five label axes, every run saved with its
+  pipeline's manifest, the judge and the mechanical checks calibrated against hand labels, and
+  regression gates that compare two pipeline versions end to end and block a degrading change
+  ([spec](eval/SPEC.md), [calibration](reports/calibration.md), [evaluation](reports/evaluation.md))
 
 **Production**
 
@@ -218,6 +221,32 @@ the model:
   premise. The probabilities sit next to the mechanical checks and change no verdict; a reading in the
   0.4–0.6 band is flagged as one the judge cannot tell and a person should read. `--no-judge` skips it.
 
+## Evaluation
+
+Every stage so far measured itself; this one makes the measurement an artifact. [`eval/SPEC.md`](eval/SPEC.md)
+is the evaluation spec: the 69 questions as one versioned benchmark, the schema for expected evidence,
+expected abstention and acceptable citation behavior, the labeling guidelines, the metric definitions and
+the gates.
+
+- **Saved runs:** `evaluate-grounding` writes every answer to `eval/runs/<name>/` next to a manifest
+  naming the git commit, the index, the retrieval configuration, the generator, its effort and a hash of
+  the prompt. `--version` picks a pipeline from [`eval/versions.yaml`](eval/versions.yaml) (`v1-dense`,
+  the stage 04 pipeline; `v2-hybrid-rerank`, the current default); `--save` names the run. Labels and
+  comparisons read saved runs, so no number costs a second model call.
+- **Calibration:** [`eval/labels.yaml`](eval/labels.yaml) holds a person's reading of 20 answers from the
+  default pipeline's run, on five axes (grounded, fabricated, gap named, correct, citations), chosen to
+  include every answer where the judge and the mechanical checks disagreed. `calibrate` compares each
+  automatic signal to the person, agreement, κ, precision and recall, sweeps each judge probability
+  across thresholds, lists every disagreement with the answer in full, and writes the
+  [report](reports/calibration.md), whose last section is the revised scoring rules. The constants in
+  `evaluation/metrics.py` (judge grounded under 0.70, fabricated at 0.50, 80% cited) are those rules.
+- **Regression gates:** `evaluate-pipeline --baseline <run> --candidate <run>` reads two saved runs,
+  computes the retrieval, groundedness and citation, abstention, cost and latency metrics on each,
+  applies [`eval/gates.yaml`](eval/gates.yaml), lists the questions whose result changed with the
+  regressions in full, and writes the [report](reports/evaluation.md). A critical gate that fails exits
+  1, which is what blocks a change; a non-critical one warns. The shipped comparison is v1 against v2,
+  which is the question stages 05 and 06 answered one metric at a time, asked once more end to end.
+
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew install tesseract`).
@@ -243,6 +272,10 @@ uv run infra-docs-rag evaluate-hybrid    # compare dense, BM25 and fused ranking
 uv run infra-docs-rag evaluate-rerank    # rerank the first stage with each cross-encoder, write the report
 uv run infra-docs-rag evaluate-grounding                         # answer every labelled and adversarial question, write the report (calls the API)
 uv run infra-docs-rag evaluate-grounding --generator claude-code # the same through `claude -p`, on the Claude Code subscription
+uv run infra-docs-rag evaluate-grounding --generator claude-code --version v1-dense --no-report   # a named pipeline version, saved under eval/runs/
+uv run infra-docs-rag calibrate                                  # the judge and the checks against eval/labels.yaml, write the report
+uv run infra-docs-rag evaluate-pipeline --baseline v1-dense-claude-code --candidate v2-hybrid-rerank-claude-code   # the gates; exit 1 when one blocks
+uv run infra-docs-rag evaluate-pipeline --list-runs              # the saved runs; --list-metrics for the names a gate can use
 uv run pytest
 ```
 
@@ -250,7 +283,9 @@ Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, chunks
 indexes to `data/index/`, and the evidence to [`reports/ingestion.md`](reports/ingestion.md),
 [`reports/chunking.md`](reports/chunking.md), [`reports/embeddings.md`](reports/embeddings.md),
 [`reports/retrieval.md`](reports/retrieval.md), [`reports/hybrid-search.md`](reports/hybrid-search.md),
-[`reports/reranking.md`](reports/reranking.md) and [`reports/grounding.md`](reports/grounding.md).
+[`reports/reranking.md`](reports/reranking.md), [`reports/grounding.md`](reports/grounding.md),
+[`reports/calibration.md`](reports/calibration.md) and [`reports/evaluation.md`](reports/evaluation.md);
+saved benchmark runs go to `eval/runs/` and are committed.
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
 needs all three, about 660 MB). The first `retrieve` or `search` downloads the default reranker
 (about 1.1 GB for bge-base; `evaluate-rerank` needs both, about 1.2 GB); `--rerank none` needs no

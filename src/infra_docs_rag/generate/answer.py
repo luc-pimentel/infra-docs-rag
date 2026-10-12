@@ -3,6 +3,7 @@ the chunk it came from. Three outcomes: no passage qualified, so nothing was ask
 model declined because the passages do not cover the question; or an answer, with the share of its
 text that carries a citation."""
 
+import time
 from dataclasses import dataclass, field
 
 from ..chunk.chunks import Chunk
@@ -32,6 +33,7 @@ class Answer:
     citations: list[Citation] = field(default_factory=list)
     uncited: list[str] = field(default_factory=list)  # answer segments with no citation, whitespace aside
     generated: Generated | None = None
+    retrieve_ms: float = 0.0  # embedding, ranking and reranking, before any call to the model
 
     @property
     def abstained(self) -> bool:
@@ -105,9 +107,11 @@ def answer(
     question: str, retriever: Retriever, generator: Generator, retrieval: Retrieval = DEFAULT_RETRIEVAL
 ) -> Answer:
     """Retrieve, and generate only when a passage qualified."""
+    started = time.perf_counter()
     context = retriever.retrieve(question, retrieval)
+    retrieve_ms = (time.perf_counter() - started) * 1000
     if context.empty:
-        return Answer(question=question, context=context, outcome="no-passage")
+        return Answer(question=question, context=context, outcome="no-passage", retrieve_ms=retrieve_ms)
     generated = generator.generate(context, question)
     outcome, citations, uncited = read(context, generated)
     return Answer(
@@ -118,6 +122,7 @@ def answer(
         citations=citations,
         uncited=uncited,
         generated=generated,
+        retrieve_ms=retrieve_ms,
     )
 
 
