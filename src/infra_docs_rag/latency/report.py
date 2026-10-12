@@ -363,6 +363,17 @@ def conclusion(w: Workload, runs: dict[str, Run], base: Profile, out_tokens: flo
             )
         else:
             out.append("Every gate passed.")
+        adv = comparison.after["abstention.adversarial_held"].value
+        adv_before = comparison.before["abstention.adversarial_held"].value
+        if adv is not None and adv_before is not None and adv < adv_before:
+            changed = [c for c in comparison.changed if c.after.kind == "adversarial"]
+            which = ", ".join(f"`{c.id}` ({c.before.verdict} → {c.after.verdict})" for c in changed)
+            out.append(
+                f" The one number that moved the wrong way is the adversarial set, {adv_before:.0%} → {adv:.0%}, at the gate's floor:"
+                f" {which}. One question on a set of ten is inside the noise the gates were sized for, and the"
+                " budget is a plausible cause (fewer passages, less to answer from), so it is the first thing"
+                " the next run under v3 should check."
+            )
         out.append("")
     if replay is not None:
         mr = run_numbers(replay)

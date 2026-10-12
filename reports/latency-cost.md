@@ -172,6 +172,7 @@ through `claude -p` with the judge, against the released run's gates: **passes**
 | end to end, median | 6,181 ms | 5,714 ms |
 
 Every gate passed.
+ The one number that moved the wrong way is the adversarial set, 90% → 80%, at the gate's floor: `adv-portuguese` (held → abstained). One question on a set of ten is inside the noise the gates were sized for, and the budget is a plausible cause (fewer passages, less to answer from), so it is the first thing the next run under v3 should check.
 
 **The cache, replayed.** `v3-budget-claude-code-replay` is the same 69 questions asked again under the same
 version with the generation cache in front of the model: 0 input tokens per call,
