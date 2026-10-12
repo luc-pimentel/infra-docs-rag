@@ -37,6 +37,9 @@ class SourceRecord(BaseModel):
     n: int
     chunk_id: str
     citation: str  # `source › Section › Subsection, pages`
+    heading: str = (
+        ""  # `[n] Project › Section › Subsection, pages`: what the model and the judge read it under
+    )
     score: float  # the ranking's score: cosine, BM25, fused or reranker relevance
     cosine: float | None  # the cosine similarity underneath, what the threshold reads
     relevance: float | None  # the reranker's score, when there was one
@@ -95,7 +98,9 @@ class CaseRecord(BaseModel):
     below: int = 0
     right_retrieved: bool | None = None
     right_cited: bool | None = None
-    cited_share: float = 0.0
+    cited_share: float = 0.0  # of the answer text
+    claim_share: float = 0.0  # of the answer text with the gap sentences left out; what the verdict reads
+    gap_sentences: list[str] = []  # uncited sentences that name what the passages do not cover
     cited_chunk_ids: list[str] = []
     uncited: list[str] = []
     retrieve_ms: float = 0.0
@@ -223,6 +228,7 @@ def record(c: Case) -> CaseRecord:
                 n=s.n,
                 chunk_id=s.chunk.chunk_id,
                 citation=s.chunk.citation(),
+                heading=s.heading,
                 score=s.hit.score,
                 cosine=gate(s.hit),
                 relevance=relevance(s.hit),
@@ -237,6 +243,8 @@ def record(c: Case) -> CaseRecord:
         right_retrieved=c.right_retrieved,
         right_cited=c.right_cited,
         cited_share=a.cited_share,
+        claim_share=a.claim_share,
+        gap_sentences=a.gap_sentences,
         cited_chunk_ids=[x.chunk_id for x in a.cited_chunks],
         uncited=list(a.uncited),
         retrieve_ms=a.retrieve_ms,

@@ -24,6 +24,7 @@ from .generator import Generator
 from .judge import Judge, Judgement
 
 Expect = Literal["answer", "abstain", "partial"]
+CLAIM_FLOOR = 0.8  # share of an answer's claims (gap sentences aside) that has to carry a citation to hold
 
 
 class GroundingQuery(BaseModel):
@@ -80,7 +81,7 @@ class Case:
             if o == "answered":
                 if self.right_cited is False:
                     return "cited the wrong passage"
-                return "held" if self.answer.cited_share >= 0.8 else "partly uncited"
+                return "held" if self.answer.claim_share >= CLAIM_FLOOR else "partly uncited"
             return "no-passage" if o == "no-passage" else o
         # partial: an answer that cites something and leaves something uncited or says so; judged by hand
         return "held" if o == "answered" else o

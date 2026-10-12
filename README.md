@@ -238,8 +238,12 @@ the gates.
   include every answer where the judge and the mechanical checks disagreed. `calibrate` compares each
   automatic signal to the person, agreement, κ, precision and recall, sweeps each judge probability
   across thresholds, lists every disagreement with the answer in full, and writes the
-  [report](reports/calibration.md), whose last section is the revised scoring rules. The constants in
-  `evaluation/metrics.py` (judge grounded under 0.70, fabricated at 0.50, 80% cited) are those rules.
+  [report](reports/calibration.md), whose last section is the revised scoring rules. Three came out of
+  this round: the judge now reads each passage under the heading the model saw it under (page and
+  section claims come from there, and without it the two page questions read as fabrication); a
+  sentence that names what the passages do not cover is left out of the cited share that decides a
+  verdict; and the judge's grounded floor is 0.50, not 0.70, since nothing under 0.70 was ungrounded by
+  hand. The constants in `evaluation/metrics.py` are those rules.
 - **Regression gates:** `evaluate-pipeline --baseline <run> --candidate <run>` reads two saved runs,
   computes the retrieval, groundedness and citation, abstention, cost and latency metrics on each,
   applies [`eval/gates.yaml`](eval/gates.yaml), lists the questions whose result changed with the

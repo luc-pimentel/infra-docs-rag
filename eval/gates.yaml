@@ -31,10 +31,10 @@ gates:
     tolerance: 0.02
     why: the judge's "a fact was added" reading, calibrated in reports/calibration.md
 
-  - metric: grounding.cited_share_median
+  - metric: grounding.claim_cited_median
     rule: min
     value: 0.9
-    why: at the median an answer should be all but fully cited
+    why: at the median an answer's claims, gap sentences aside, should be all but fully cited
 
   # Retrieval: what the model reads has to include the right passage.
   - metric: retrieval.right_retrieved

@@ -166,7 +166,9 @@ def test_metrics_read_retrieval_grounding_abstention_and_cost_off_a_run(two_runs
         after["grounding.judge_fabricated"].shown == "2/4 (50%)"
         and after["grounding.judge_unsure"].value == 1
     )
-    assert after["grounding.flagged"].shown == "3/4 (75%)"
+    assert (
+        after["grounding.flagged"].shown == "3/4 (75%)" and after["grounding.claim_cited_median"].value == 1.0
+    )
     assert before["cost.usd_total"].value == pytest.approx(5 * 0.00012) and before[
         "cost.judge_usd"
     ].value == pytest.approx(0.003)
@@ -182,9 +184,9 @@ def test_flags_name_what_the_revised_rules_object_to(two_runs):
     _, cand = two_runs
     by_id = cand.by_id()
     assert flags(by_id["surge"]) == ["wrong passage cited"]
-    assert flags(by_id["scale"]) == ["cited share 49%", "judge grounded 0.30", "judge fabricated 0.70"]
-    assert flags(by_id["adv-memory"]) == ["judge grounded 0.50", "judge fabricated 0.50"]
-    assert flags(by_id["bread"]) == [] and by_id["scale"].cited_share < CITED_FLOOR < GROUNDED_FLOOR + 0.2
+    assert flags(by_id["scale"]) == ["claims cited 49%", "judge grounded 0.30", "judge fabricated 0.70"]
+    assert flags(by_id["adv-memory"]) == ["judge fabricated 0.50"]  # 0.50 is not under the grounded floor
+    assert flags(by_id["bread"]) == [] and by_id["scale"].claim_share < CITED_FLOOR and GROUNDED_FLOOR == 0.5
 
 
 def test_each_gate_rule_reads_the_metric_its_way():
@@ -250,6 +252,7 @@ def test_the_comparison_runs_the_gates_and_lists_the_questions_that_changed(two_
     assert "| `retrieval.mrr` | must not drop | 1.00 | 1.00 | +0.00 | pass |" in report
     assert "| `cost.usd_per_1000` | ≤ 0 |" in report and "| warn |" in report
     assert "**Retrieval**" in report and "| `grounding.flagged` | 0/3 (0%) | 3/4 (75%) | +75% | ▼ |" in report
+    assert "| `grounding.gap_sentences` |" in report
     assert "3 questions differ: 0 now hold that did not, 3 held and no longer do" in report
     assert "### `surge` · identifier · expected to answer" in report and "✓" in report
     assert "only the retrieval differs" in report
@@ -371,23 +374,28 @@ def test_the_calibration_compares_each_signal_to_the_person_and_writes_the_repor
         "judge fabricated",
         "judge gap named",
         "cited share",
+        "claims cited",
         "fully cited",
         "right cited",
         "verdict held",
     ]
     grounded = by_name["judge grounded"]
-    # the judge reads `scale` (0.3) and `adv-memory` (0.5) as ungrounded; the person only `adv-memory`
+    # at the 0.50 floor the judge reads `scale` (0.3) as ungrounded and `adv-memory` (0.5) as grounded;
+    # the person says the opposite of both
     assert (grounded.agreement.tp, grounded.agreement.fp, grounded.agreement.fn, grounded.agreement.tn) == (
         2,
+        1,
+        1,
         0,
-        1,
-        1,
     )
-    assert grounded.agreement.agreement == 0.75 and [d.case.id for d in grounded.disagreements] == ["scale"]
+    assert grounded.agreement.agreement == 0.5 and [d.case.id for d in grounded.disagreements] == [
+        "scale",
+        "adv-memory",
+    ]
     assert grounded.disagreements[0].reading == "0.30" and grounded.sweep[0][0] == SWEEP[0] == 0.3
-    # 0.30 and 0.70 tie at 3/4 (the 0.30 reading flips at one end, the 0.50 one at the other); the tie
-    # goes to the threshold in use
-    assert grounded.best[0] == 0.7 and grounded.best[1].agreement == 0.75
+    # 0.30 and 0.55–0.70 reach 3/4 (the 0.30 reading flips at one end, the 0.50 one at the other); the
+    # tie goes to the threshold nearest the one in use
+    assert grounded.best[0] == 0.55 and grounded.best[1].agreement == 0.75
     fabricated = by_name["judge fabricated"]
     assert fabricated.agreement.agreement == 0.75 and [d.case.id for d in fabricated.disagreements] == [
         "scale"
@@ -405,13 +413,13 @@ def test_the_calibration_compares_each_signal_to_the_person_and_writes_the_repor
     write_calibration_report(cal, tmp_path / "calibration.md")
     report = (tmp_path / "calibration.md").read_text()
     assert report.startswith("# Calibration report") and "labelled by a reader" in report
-    assert "| judge grounded | 75% agreement at 0.70" in report and "best threshold 0.70 at 75%" in report
+    assert "| judge grounded | 50% agreement at 0.50" in report and "best threshold 0.55 at 75%" in report
     assert (
         "| `scale` | paraphrase | answer | partly uncited | yes | no | n/a | yes | right | 0.30 | 0.70 |"
         in report
     )
-    assert "## 3. Where to read a probability" in report and "| 0.70 ◀ |" in report
-    assert "**judge grounded** (1 of 4)" in report and "'Trust me' is filler" in report
+    assert "## 3. Where to read a probability" in report and "| 0.50 ◀ |" in report
+    assert "**judge grounded** (2 of 4)" in report and "'Trust me' is filler" in report
     assert "**right cited**: agrees with the person on every labelled answer." in report
     assert "### `scale` · paraphrase · expected to answer: partly uncited" in report
     assert "Read fabricated at 0.5 and trust it." in report and "## 6. Revised scoring rules" in report

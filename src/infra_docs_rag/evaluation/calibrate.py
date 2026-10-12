@@ -177,6 +177,12 @@ def calibrate(run: Run, labels: LabelSet) -> Calibration:
             [(c, x, c.cited_share >= CITED_FLOOR, x.grounded, f"{c.cited_share:.0%}") for c, x in cases],
         ),
         (
+            "claims cited",
+            f"claims cited ≥ {CITED_FLOOR:.0%} (gap sentences left out)",
+            "grounded: every claim is in a passage",
+            [(c, x, c.claim_share >= CITED_FLOOR, x.grounded, f"{c.claim_share:.0%}") for c, x in cases],
+        ),
+        (
             "fully cited",
             "no uncited sentence",
             "grounded: every claim is in a passage",

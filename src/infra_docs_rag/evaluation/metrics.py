@@ -6,14 +6,15 @@ import statistics
 from dataclasses import dataclass
 from typing import Literal
 
+from ..generate.evaluate import CLAIM_FLOOR
 from ..generate.judge import BAND
 from .runs import CaseRecord, Run
 
 # The revised scoring rules from the calibration (reports/calibration.md): where the judge's
 # probabilities are read as a verdict, and the mechanical floor an answer has to clear.
-GROUNDED_FLOOR = 0.7  # jev grounded under this: the answer reads as ungrounded
+GROUNDED_FLOOR = 0.5  # jev grounded under this: the answer reads as ungrounded (the bottom of the band)
 FABRICATED_CEILING = 0.5  # jev fabricated at or over this: a fact was added
-CITED_FLOOR = 0.8  # share of answer text with a citation an answer needs to count as held
+CITED_FLOOR = CLAIM_FLOOR  # share of an answer's claims (gap sentences aside) that has to carry a citation
 
 Better = Literal["higher", "lower"]
 
@@ -61,8 +62,8 @@ def flags(c: CaseRecord) -> list[str]:
     out: list[str] = []
     if c.right_cited is False:
         out.append("wrong passage cited")
-    if c.cited_share < CITED_FLOOR:
-        out.append(f"cited share {c.cited_share:.0%}")
+    if c.claim_share < CITED_FLOOR:
+        out.append(f"claims cited {c.claim_share:.0%}")
     j = c.judgement
     if j is not None:
         if j.grounded < GROUNDED_FLOOR:
@@ -159,6 +160,20 @@ def metrics(run: Run) -> dict[str, Metric]:
             "share of answer text carrying a verified citation, at the median over the answers",
         ),
         m(
+            "grounding.claim_cited_median",
+            median([c.claim_share for c in answered]),
+            f"{median([c.claim_share for c in answered]):.0%}" if answered else "–",
+            "higher",
+            "the same share with the gap sentences left out: what the answer claims about the subject",
+        ),
+        m(
+            "grounding.gap_sentences",
+            share([c for c in answered if c.gap_sentences], answered),
+            shown_share([c for c in answered if c.gap_sentences], answered),
+            "higher",
+            "answers with a sentence naming what the passages do not cover",
+        ),
+        m(
             "grounding.fully_cited",
             share(fully, answered),
             shown_share(fully, answered),
@@ -198,7 +213,7 @@ def metrics(run: Run) -> dict[str, Metric]:
             share(flagged, answered),
             shown_share(flagged, answered),
             "lower",
-            "answers a revised rule flags: wrong passage, cited share under the floor, or the judge's reading",
+            "answers a revised rule flags: wrong passage, claims cited under the floor, or the judge's reading",
         ),
         m(
             "abstention.out_of_scope",
@@ -226,7 +241,7 @@ def metrics(run: Run) -> dict[str, Metric]:
             share(in_scope_held, in_scope),
             shown_share(in_scope_held, in_scope),
             "higher",
-            f"in-scope questions answered from a right passage with at least {CITED_FLOOR:.0%} of the text cited",
+            f"in-scope questions answered from a right passage with at least {CITED_FLOOR:.0%} of their claims cited",
         ),
         m(
             "answers.held",

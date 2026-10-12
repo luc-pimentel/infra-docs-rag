@@ -65,10 +65,12 @@ no citation at all counts as an abstention too, since nothing in it rests on a p
 **Acceptable citation behavior.** Every statement in an answer carries a citation to the passage it
 rests on; a citation is one that checked out (the API tied the span to the passage, or the typed quote
 was found in it), not one the model merely typed. For a labelled question, at least one cited passage
-has to be a right one. An answer with under 80% of its text cited is *partly uncited*; the sentence the
-prompt asks for when part of a question is uncovered is allowed to be uncited, which is why the floor is
-80% and not 100%. A `partial` expectation holds when the covered part is answered with citations and the
-rest is named as uncovered; the judge's *gap named* reading and the hand labels say whether it was.
+has to be a right one. A *gap sentence*, one that says what the passages do not cover or what the answer
+cannot say from them, is what the prompt asks for and has nothing to cite, so it is left out of the share
+that decides the verdict: an answer with under 80% of its *claims* cited is *partly uncited*
+(`claim_share`; the raw `cited_share` over all the text is still reported). A `partial` expectation holds
+when the covered part is answered with citations and the rest is named as uncovered; the judge's *gap
+named* reading and the hand labels say whether it was.
 
 ## 2. Labeling guidelines
 
@@ -108,12 +110,14 @@ answer, not an abstention, refusal or cut-off.
 
 - `grounding.right_cited`: answered labelled questions that cite a right passage.
 - `grounding.cited_share_median`: share of answer text carrying a verified citation, at the median.
+- `grounding.claim_cited_median`: the same with the gap sentences left out, at the median; what the verdict reads.
+- `grounding.gap_sentences`: answers with a sentence naming what the passages do not cover.
 - `grounding.fully_cited`: answers with no uncited sentence.
 - `grounding.unverified_citations`: typed citations that did not check out, over the run.
-- `grounding.judge_grounded`: answers the judge reads as grounded, P ≥ 0.70.
+- `grounding.judge_grounded`: answers the judge reads as grounded, P ≥ 0.50.
 - `grounding.judge_fabricated`: answers the judge reads as adding a fact, P ≥ 0.50.
 - `grounding.judge_unsure`: answers with a grounded or fabricated reading in the 0.4–0.6 band.
-- `grounding.flagged`: answers a revised rule flags: wrong passage cited, cited share under 80%, judge grounded under 0.70 or fabricated at 0.50 or over.
+- `grounding.flagged`: answers a revised rule flags: wrong passage cited, claims cited under 80%, judge grounded under 0.50 or fabricated at 0.50 or over.
 
 **Abstention**
 
@@ -123,7 +127,7 @@ answer, not an abstention, refusal or cut-off.
 
 **Expectations**
 
-- `answers.in_scope_held`: in-scope questions answered from a right passage with at least 80% cited.
+- `answers.in_scope_held`: in-scope questions answered from a right passage with at least 80% of their claims cited.
 - `answers.held`: questions whose expectation held, over the whole benchmark.
 
 **Cost and latency**

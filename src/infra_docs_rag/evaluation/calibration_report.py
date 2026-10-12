@@ -68,7 +68,7 @@ def write_report(cal: Calibration, output: Path) -> None:
             f"| {name} | {pct(s.agreement.agreement)} agreement at {s.threshold:.2f} (κ {num(s.agreement.kappa)}); "
             f"best threshold {top[0]:.2f} at {pct(top[1].agreement)} |"
         )
-    for name in ("cited share", "right cited", "verdict held"):
+    for name in ("cited share", "claims cited", "right cited", "verdict held"):
         s = best[name]
         add(f"| {name} | {pct(s.agreement.agreement)} agreement (κ {num(s.agreement.kappa)}) |")
     add("")
@@ -100,7 +100,7 @@ def write_report(cal: Calibration, output: Path) -> None:
             f"| `{c.id}` | {c.kind} | {c.expect} | {c.verdict} | {'yes' if x.grounded else 'no'} | "
             f"{'yes' if x.fabricated else 'no'} | {'n/a' if x.gap_named is None else ('yes' if x.gap_named else 'no')} | "
             f"{x.correct} | {x.citations} | {num(j.grounded) if j else '–'} | {num(j.fabricated) if j else '–'} | "
-            f"{c.cited_share:.0%} |"
+            f"{c.cited_share:.0%} | {c.claim_share:.0%} |"
         )
     add("")
 
@@ -118,12 +118,27 @@ def write_report(cal: Calibration, output: Path) -> None:
     for s in cal.signals:
         add(f"| {s.name} | {s.what} | {s.against} | {row(s.agreement)} |")
     add("")
+    constant = [
+        axis for axis in ("grounded", "fabricated") if len({getattr(x, axis) for _, x in cal.cases}) == 1
+    ]
+    if constant:
+        add(
+            "κ is 0 by construction where the person's label never varies ("
+            + " and ".join(constant)
+            + f" here: every one of the {n} answers got the same label), since agreement beyond chance needs both "
+            "sides to vary. On such a set the numbers measure the signal's false alarms, not its recall: an "
+            "automatic no is a disagreement, and there is no ungrounded answer for it to catch.\n"
+        )
     medians = judge_medians(cal)
     g, f = medians["grounded"], medians["fabricated"]
+
+    def med(value: float) -> str:
+        return "no such answer" if value != value else f"{value:.2f}"
+
     add(
-        f"The judge's median grounded reading is {g[0]:.2f} on the answers the person called grounded and "
-        f"{g[1]:.2f} on the rest; its median fabricated reading is {f[0]:.2f} on the answers the person "
-        f"called fabricated and {f[1]:.2f} on the rest.\n"
+        f"The judge's median grounded reading is {med(g[0])} on the answers the person called grounded and "
+        f"{med(g[1])} on the rest; its median fabricated reading is {med(f[0])} on the answers the person "
+        f"called fabricated and {med(f[1])} on the rest.\n"
     )
 
     add("## 3. Where to read a probability\n")
@@ -183,7 +198,7 @@ def write_report(cal: Calibration, output: Path) -> None:
             f"*Person: grounded {'yes' if x.grounded else 'no'}, fabricated {'yes' if x.fabricated else 'no'}, "
             f"correct {x.correct}, citations {x.citations}"
             + (f", gap named {'yes' if x.gap_named else 'no'}" if x.gap_named is not None else "")
-            + f". Automatic: cited share {c.cited_share:.0%}, right cited {c.right_cited}"
+            + f". Automatic: cited share {c.cited_share:.0%}, claims cited {c.claim_share:.0%}, right cited {c.right_cited}"
             + (
                 f", judge grounded {j.grounded:.2f}, fabricated {j.fabricated:.2f}, gap named {j.gap_named:.2f}"
                 if j
@@ -198,8 +213,8 @@ def write_report(cal: Calibration, output: Path) -> None:
     add(
         f"The constants the evaluation runs with, after this calibration: an answer reads as ungrounded under "
         f"jev grounded {GROUNDED_FLOOR}, as adding a fact at jev fabricated {FABRICATED_CEILING} or over, and "
-        f"needs {CITED_FLOOR:.0%} of its text cited to count as held; a reading in the {BAND[0]:.1f}–{BAND[1]:.1f} "
-        "band is still one for a person.\n"
+        f"needs {CITED_FLOOR:.0%} of its claims cited, gap sentences left out, to count as held; a reading in the "
+        f"{BAND[0]:.1f}–{BAND[1]:.1f} band is still one for a person.\n"
     )
     if cal.labels.revised_rules.strip():
         add(cal.labels.revised_rules.strip() + "\n")
