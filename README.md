@@ -52,7 +52,11 @@ Each stage ships into this repo, so the service grows with the checklist.
 
 **Production**
 
-- [ ] 09 · Pipeline orchestration, versioning and failure isolation
+- [x] 09 · Pipeline orchestration, versioning and failure isolation: the stages as a graph with typed
+  artifacts between them, each run skipping what is up to date and stopping at the stage that failed;
+  every result carrying the version of the prompt, chunking, embedding model, index and retrieval that
+  produced it; indexes built next to the live one and switched when they pass their checks; releases
+  that clear the gates, and a rollback ([contracts](docs/pipeline.md), [report](reports/orchestration.md))
 - [ ] 10 · System design and observability
 - [ ] 11 · Latency and cost optimization
 - [ ] 12 · Capstone: FastAPI service, eval report across three versions, design doc, demo and a
@@ -104,9 +108,10 @@ model can't read it in one piece, and every chunk cites exactly one section.
 ## Embeddings
 
 A local [sentence-transformers](https://www.sbert.net/) model embeds every chunk, context line
-included, and the index is plain files under `data/index/<model>/`: the vectors, the chunks with their
-provenance, and a manifest naming the model, its pinned revision, the vector size, the metric and how
-the chunks were cut.
+included, and the index is plain files under `data/index/<model>/<version>/`: the vectors, the chunks
+with their provenance, and a manifest naming the model, its pinned revision, the vector size, the metric
+and how the chunks were cut. The version is the hash of that content, and `data/index/<model>/current`
+names the one that answers questions (see Orchestration).
 
 - **Models:** `bge-small` by default, plus `bge-base` and `minilm`, each pinned to a Hugging Face
   commit. BGE queries get the instruction its model card recommends; documents don't.
@@ -208,7 +213,11 @@ the model:
 - **Grounding measures:** the share of answer text that carries a citation, the uncited sentences,
   and, for a labelled question, whether a cited chunk is the right one.
 - **Prompt:** `--show-prompt` prints the request as the model sees it. `--effort` sets how hard the
-  model thinks (`medium` by default). Nothing is read from the repository.
+  model thinks (`medium` by default). Nothing is read from the repository. The system prompt is an entry
+  in a small registry (`generate/prompts.py`), named and hashed; `--prompt` picks one.
+- **Version:** with no retrieval flag, `answer`, `retrieve` and `search` run the current release's
+  pipeline version (see Orchestration); any flag wins over it, and `--version <name>` runs a version
+  from `eval/versions.yaml`.
 - **Benchmark:** `evaluate-grounding` answers the 59 labelled questions and the adversarial set in
   [`eval/grounding.yaml`](eval/grounding.yaml) (instructions planted in the question, false premises,
   memory bait, half-covered questions, a question in Portuguese), each with an expectation written first,
@@ -230,9 +239,11 @@ the gates.
 
 - **Saved runs:** `evaluate-grounding` writes every answer to `eval/runs/<name>/` next to a manifest
   naming the git commit, the index, the retrieval configuration, the generator, its effort and a hash of
-  the prompt. `--version` picks a pipeline from [`eval/versions.yaml`](eval/versions.yaml) (`v1-dense`,
-  the stage 04 pipeline; `v2-hybrid-rerank`, the current default); `--save` names the run. Labels and
-  comparisons read saved runs, so no number costs a second model call.
+  the prompt, plus the lineage: the version of every stage that produced the answers (see Orchestration).
+  `--version` picks a pipeline from [`eval/versions.yaml`](eval/versions.yaml) (`v1-dense`, the stage 04
+  pipeline; `v2-hybrid-rerank`, the current default), each naming its retrieval, prompt and embedding
+  model; `--save` names the run. Labels and comparisons read saved runs, so no number costs a second
+  model call.
 - **Calibration:** [`eval/labels.yaml`](eval/labels.yaml) holds a person's reading of 20 answers from the
   default pipeline's run, on five axes (grounded, fabricated, gap named, correct, citations), chosen to
   include every answer where the judge and the mechanical checks disagreed. `calibrate` compares each
@@ -250,6 +261,32 @@ the gates.
   regressions in full, and writes the [report](reports/evaluation.md). A critical gate that fails exits
   1, which is what blocks a change; a non-critical one warns. The shipped comparison is v1 against v2,
   which is the question stages 05 and 06 answered one metric at a time, asked once more end to end.
+
+## Orchestration
+
+The stages above are one graph, and `pipeline run` runs it: fetch, ingest, chunk, embed, and with
+`--generator`, evaluate and gate. [`docs/pipeline.md`](docs/pipeline.md) is the contract for each stage
+(what it reads and writes, where its state lives, what its version hashes, where a failure stops) and
+[`reports/orchestration.md`](reports/orchestration.md) is the graph exercised on the corpus: a run, a
+failure, a retry, a re-index, a refused release, a rollback.
+
+- **Up to date:** every artifact has a content fingerprint (the records' hashes and parse statuses,
+  the chunks' bytes, the index version), and a stage whose last run saw the same inputs under the same
+  configuration, with its outputs intact, is skipped. Rewriting the same content is not a change.
+- **Failure:** a stage that raises is recorded with its error, nothing after it runs, and the next run
+  starts there. A source that will not download, a file that will not parse, a model call that fails
+  inside a benchmark, a judge that is down: each is one entry in its artifact, not the end of the run.
+  `pipeline status` shows where every stage stands.
+- **Lineage:** every saved run and every release carries a `PipelineManifest`: the ingest, chunking,
+  embedding, index, prompt and retrieval versions, each a pinned id or a hash of the content, and the
+  run that measured it.
+- **Index versions:** `embed` builds into a staging directory, checks the result, and renames it into
+  `data/index/<model>/<version>/`; `current` is rewritten last. `pipeline index --list | --use | --remove`
+  manages the versions; earlier ones stay until removed.
+- **Releases:** `pipeline release --candidate <run>` compares a saved run to the current release's with
+  the gates and, when it clears them, records it in [`eval/releases.yaml`](eval/releases.yaml) and makes
+  it current; a critical failure refuses it. `pipeline rollback` makes the previous release current and
+  points the index at its version. `answer` runs the current release unless told otherwise.
 
 ## Run it
 
@@ -280,16 +317,24 @@ uv run infra-docs-rag evaluate-grounding --generator claude-code --version v1-de
 uv run infra-docs-rag calibrate                                  # the judge and the checks against eval/labels.yaml, write the report
 uv run infra-docs-rag evaluate-pipeline --baseline v1-dense-claude-code --candidate v2-hybrid-rerank-claude-code   # the gates; exit 1 when one blocks
 uv run infra-docs-rag evaluate-pipeline --list-runs              # the saved runs; --list-metrics for the names a gate can use
+uv run infra-docs-rag pipeline run                               # fetch → ingest → chunk → embed, skipping what is up to date
+uv run infra-docs-rag pipeline run --from chunk --size 256       # a second chunking and index version, next to the first
+uv run infra-docs-rag pipeline status                            # where each stage stands, the index versions, the releases
+uv run infra-docs-rag pipeline index --use 3971d9f1e10e          # point bge-small at an index version; --list, --remove
+uv run infra-docs-rag pipeline release --candidate v2-hybrid-rerank-claude-code   # promote a run's pipeline past the gates; exit 1 when refused
+uv run infra-docs-rag pipeline rollback                          # the previous release again
 uv run pytest
 ```
 
 Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, chunks to `data/chunks/`,
-indexes to `data/index/`, and the evidence to [`reports/ingestion.md`](reports/ingestion.md),
+indexes to `data/index/<model>/<version>/`, the orchestrator's state to `data/pipeline/state.json`, and
+the evidence to [`reports/ingestion.md`](reports/ingestion.md),
 [`reports/chunking.md`](reports/chunking.md), [`reports/embeddings.md`](reports/embeddings.md),
 [`reports/retrieval.md`](reports/retrieval.md), [`reports/hybrid-search.md`](reports/hybrid-search.md),
 [`reports/reranking.md`](reports/reranking.md), [`reports/grounding.md`](reports/grounding.md),
-[`reports/calibration.md`](reports/calibration.md) and [`reports/evaluation.md`](reports/evaluation.md);
-saved benchmark runs go to `eval/runs/` and are committed.
+[`reports/calibration.md`](reports/calibration.md), [`reports/evaluation.md`](reports/evaluation.md) and
+[`reports/orchestration.md`](reports/orchestration.md); saved benchmark runs go to `eval/runs/` and
+releases to `eval/releases.yaml`, both committed.
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
 needs all three, about 660 MB). The first `retrieve` or `search` downloads the default reranker
 (about 1.1 GB for bge-base; `evaluate-rerank` needs both, about 1.2 GB); `--rerank none` needs no

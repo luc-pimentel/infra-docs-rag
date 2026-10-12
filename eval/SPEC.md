@@ -4,9 +4,11 @@ What the benchmark measures, how a question is labelled, what each metric means,
 to clear. The questions live in [`retrieval.yaml`](retrieval.yaml), [`hybrid.yaml`](hybrid.yaml) and
 [`grounding.yaml`](grounding.yaml); the hand labels in [`labels.yaml`](labels.yaml); the pipeline
 versions in [`versions.yaml`](versions.yaml); the gates in [`gates.yaml`](gates.yaml); saved runs under
-[`runs/`](runs/). The files are versioned with the code: a run's manifest records the git commit, the
-index, the retrieval configuration, the generator and a hash of the prompt, so a number can always be
-traced to the benchmark and pipeline that produced it.
+[`runs/`](runs/); the releases in [`releases.yaml`](releases.yaml). The files are versioned with the
+code: a run's manifest records the git commit, the index, the retrieval configuration, the generator and
+a hash of the prompt, and its `lineage` the version of every stage that produced the answers (ingest,
+chunking, embedding model, index, prompt, retrieval; see [`docs/pipeline.md`](../docs/pipeline.md)), so a
+number can always be traced to the benchmark and pipeline that produced it.
 
 ## 1. The benchmark
 
@@ -157,8 +159,9 @@ uv run infra-docs-rag evaluate-grounding --generator claude-code --version v1-de
 uv run infra-docs-rag evaluate-grounding --generator claude-code --version v2-hybrid-rerank        # saves eval/runs/v2-hybrid-rerank-claude-code/, writes reports/grounding.md
 uv run infra-docs-rag calibrate                                                                     # labels.yaml against the run it names → reports/calibration.md
 uv run infra-docs-rag evaluate-pipeline --baseline v1-dense-claude-code --candidate v2-hybrid-rerank-claude-code   # → reports/evaluation.md, exit 1 on a failed critical gate
+uv run infra-docs-rag pipeline release --candidate v2-hybrid-rerank-claude-code                     # the gates against the current release; promotes when they pass, exit 1 when refused
 ```
 
 A new pipeline version is an entry in `versions.yaml`, one `evaluate-grounding --version` run, and one
-`evaluate-pipeline` against the current default's run. A new question is an entry in one of the three
+`pipeline release --candidate` against the current release (or `evaluate-pipeline` against any run). A new question is an entry in one of the three
 question files with its hypothesis written first; the next run picks it up.
