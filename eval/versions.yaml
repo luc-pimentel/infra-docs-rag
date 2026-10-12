@@ -7,8 +7,9 @@
 # no flags.
 #
 # v1 is the pipeline as it stood after stage 04: the cosine ranking alone, no reranker. v2 adds stages
-# 05 and 06, hybrid fusion and the cross-encoder, and is what `default` currently resolves to. The
-# regression gates in gates.yaml are what a change from v1 to v2 (or v2 to a v3) has to clear.
+# 05 and 06, hybrid fusion and the cross-encoder, and is what `default` resolves to. v3 is v2 with a
+# token budget on the passages (stage 11), the current release. The regression gates in gates.yaml are
+# what a change from one to the next has to clear.
 
 versions:
   - name: v1-dense

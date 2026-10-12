@@ -62,7 +62,10 @@ Each stage ships into this repo, so the service grows with the checklist.
   per question with every stage's input, output and time; a summary over the trace log; a canary that
   asks the released pipeline five known questions; health checks ([design](docs/design.md),
   [report](reports/observability.md))
-- [ ] 11 · Latency and cost optimization
+- [x] 11 · Latency and cost optimization: the request path profiled stage by stage with tokens and
+  cost, fourteen configurations measured before and after on the benchmark without a model call, a
+  generation cache, the indexing batch sweep, and the matrix across latency, cost, retrieval quality,
+  groundedness and abstention; v3 is the cut that was free ([report](reports/latency-cost.md))
 - [ ] 12 · Capstone: FastAPI service, eval report across three versions, design doc, demo and a
   postmortem
 
@@ -245,8 +248,8 @@ the gates.
   naming the git commit, the index, the retrieval configuration, the generator, its effort and a hash of
   the prompt, plus the lineage: the version of every stage that produced the answers (see Orchestration).
   `--version` picks a pipeline from [`eval/versions.yaml`](eval/versions.yaml) (`v1-dense`, the stage 04
-  pipeline; `v2-hybrid-rerank`, the current default), each naming its retrieval, prompt and embedding
-  model; `--save` names the run. Labels and comparisons read saved runs, so no number costs a second
+  pipeline; `v2-hybrid-rerank`, stages 05 and 06; `v3-budget`, stage 11 and the current release), each
+  naming its retrieval, prompt and embedding model; `--save` names the run. Labels and comparisons read saved runs, so no number costs a second
   model call.
 - **Calibration:** [`eval/labels.yaml`](eval/labels.yaml) holds a person's reading of 20 answers from the
   default pipeline's run, on five axes (grounded, fabricated, gap named, correct, citations), chosen to
@@ -263,8 +266,9 @@ the gates.
   computes the retrieval, groundedness and citation, abstention, cost and latency metrics on each,
   applies [`eval/gates.yaml`](eval/gates.yaml), lists the questions whose result changed with the
   regressions in full, and writes the [report](reports/evaluation.md). A critical gate that fails exits
-  1, which is what blocks a change; a non-critical one warns. The shipped comparison is v1 against v2,
-  which is the question stages 05 and 06 answered one metric at a time, asked once more end to end.
+  1, which is what blocks a change; a non-critical one warns. The shipped comparison is the latest
+  release against the one before it (v2 against v3 at the time of writing; v1 against v2 was the
+  question stages 05 and 06 answered one metric at a time, asked once more end to end).
 
 ## Orchestration
 
@@ -316,6 +320,30 @@ summarized.
   when one fails. **Health:** `pipeline health` checks the index, the release, freshness, the model path,
   the judge and the recent traces, and exits 1 when one fails.
 
+## Latency and cost
+
+`evaluate-latency` runs the benchmark workload through retrieval under every configuration in
+`latency/configs.py` with every stage timed and the retrieval quality read off the labels, no model call,
+and writes [`reports/latency-cost.md`](reports/latency-cost.md): the request path stage by stage with
+tokens and cost, each optimization applied alone with its before and after, the indexing batch sweep,
+and the matrix of configurations across latency, cost, retrieval quality, groundedness and abstention,
+with the generation side read from the saved runs. The profiles are saved to
+[`eval/latency.json`](eval/latency.json) so the report regenerates without profiling again.
+
+- **Generation cache** (`generate/cache.py`): keyed by the model, the prompt version, the question and
+  the exact chunks the model would read, so a repeat costs nothing and a different index, prompt or
+  context is a different key. On for `answer` (`--no-cache` skips it), off for the benchmarks unless
+  `evaluate-grounding --cache`, which is how a replay measures it.
+- **Batch size:** the embedder's `batch_size` is a knob; the report has the sweep.
+- **v3:** `v3-budget` is v2 with the passages capped at 1,200 tokens in rank order, the one cut that was
+  free on every retrieval number (51/53 right passages, MRR 0.91, 31% fewer passage tokens). Run end to
+  end it cleared all ten gates against v2 (false abstentions 3 → 2, judge fabricated 1 → 0, −$1.87 per
+  1,000, 0.5 s faster at the median) and is release r4. The candidate designed before measuring (10
+  candidates, a relevance floor of 0.10, 4 passages) lost 8 right passages; the floor alone made 7 false
+  abstentions. The small cross-encoder is the latency option (1.5 s → 0.3 s retrieval, no lost passage,
+  MRR −0.03) but does not combine with the budget. A replay of the benchmark through the cache was 68/68
+  hits.
+
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew install tesseract`).
@@ -355,6 +383,9 @@ uv run infra-docs-rag answer "What does keep_firing_for do?" --generator claude-
 uv run infra-docs-rag traces                                     # the trace log summarized; --last 3, --id <id>, --report
 uv run infra-docs-rag pipeline canary                            # five known questions against the release; exit 1 on a failure
 uv run infra-docs-rag pipeline health                            # index, release, freshness, model path, judge, recent traces
+uv run infra-docs-rag evaluate-latency                           # profile every configuration on the benchmark (no model), write the report; --from-saved rewrites it
+uv run infra-docs-rag evaluate-grounding --generator claude-code --version v3-budget --cache --save v3-replay   # a replay through the generation cache
+uv run python scripts/warm_cache.py eval/runs/v3-budget-claude-code   # fill the cache from a saved run, no model call
 uv run pytest
 ```
 
@@ -365,8 +396,8 @@ to `data/traces/traces.jsonl`, and the evidence to [`reports/ingestion.md`](repo
 [`reports/retrieval.md`](reports/retrieval.md), [`reports/hybrid-search.md`](reports/hybrid-search.md),
 [`reports/reranking.md`](reports/reranking.md), [`reports/grounding.md`](reports/grounding.md),
 [`reports/calibration.md`](reports/calibration.md), [`reports/evaluation.md`](reports/evaluation.md) and
-[`reports/orchestration.md`](reports/orchestration.md) and [`reports/observability.md`](reports/observability.md);
-saved benchmark runs go to `eval/runs/` and
+[`reports/orchestration.md`](reports/orchestration.md), [`reports/observability.md`](reports/observability.md)
+and [`reports/latency-cost.md`](reports/latency-cost.md); the generation cache to `data/cache/`; saved benchmark runs go to `eval/runs/` and
 releases to `eval/releases.yaml`, both committed.
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
 needs all three, about 660 MB). The first `retrieve` or `search` downloads the default reranker
