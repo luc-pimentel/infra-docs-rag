@@ -1,0 +1,63 @@
+{
+  "name": "v2-hybrid-rerank-claude-code",
+  "version": "v2-hybrid-rerank",
+  "description": "hybrid weighted fusion (α 0.5) reranked by bge-base over 20 candidates, the stage 06 default",
+  "created_at": "2026-10-12T16:25:00+00:00",
+  "git_sha": "b228565",
+  "machine": "Apple M4, CPU only (4 threads), torch 2.14.0",
+  "index": {
+    "model": "bge-small",
+    "model_id": "BAAI/bge-small-en-v1.5",
+    "revision": "5c38ec7c405ec4b44b94cc5a9bb96e735b38267a",
+    "dimensions": 384,
+    "metric": "cosine",
+    "query_prefix": "Represent this sentence for searching relevant passages: ",
+    "max_tokens": 512,
+    "chunking": {
+      "strategy": "section-aware",
+      "size": 512,
+      "overlap": 64,
+      "context": true
+    },
+    "chunks": 497,
+    "truncated": 0,
+    "ingest_version": "0.1.0+8e4b1a0",
+    "built_at": "2026-09-30T21:33:18+00:00",
+    "build_seconds": 18.29
+  },
+  "retrieval": {
+    "k": 5,
+    "min_score": 0.5,
+    "filter": {
+      "project": null,
+      "source": null,
+      "section": null,
+      "page": null
+    },
+    "prefilter": true,
+    "budget": null,
+    "mode": "hybrid",
+    "fusion": {
+      "strategy": "weighted",
+      "depth": 50,
+      "rrf_k": 60,
+      "alpha": 0.5
+    },
+    "rerank": {
+      "model": "bge-base",
+      "candidates": 20,
+      "min_relevance": null
+    }
+  },
+  "generator": "claude-opus-5-5",
+  "backend": "claude-code",
+  "effort": "medium",
+  "prompt_sha256": "e732a9f0cc40",
+  "prices": {
+    "input": 4.0,
+    "output": 20.0,
+    "cache_read": 0.2
+  },
+  "judge": "jev-1.13.0",
+  "questions": 69
+}

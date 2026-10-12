@@ -1,10 +1,12 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
-evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding`,
-run from the repo root."""
+evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
+calibrate | evaluate-pipeline`, run from the repo root."""
 
 import argparse
 import re
 from pathlib import Path
+
+import yaml
 
 from .chunk.chunks import DEFAULT_CHUNKING, STRATEGIES, Chunking, chunk_documents
 from .chunk.evaluate import GRID, benchmark, shape
@@ -15,6 +17,15 @@ from .embed.evaluate import evaluate, load_queries
 from .embed.index import Index, ModelMismatch, build
 from .embed.report import format_search
 from .embed.report import write_report as write_embeddings_report
+from .evaluation.calibrate import calibrate
+from .evaluation.calibration_report import write_report as write_calibration_report
+from .evaluation.gates import compare as compare_runs
+from .evaluation.gates import load_gates
+from .evaluation.labels import LABELS, load_labels
+from .evaluation.metrics import metrics
+from .evaluation.report import write_report as write_evaluation_report
+from .evaluation.runs import RUNS_DIR, Run, from_grounding
+from .evaluation.versions import DEFAULT_VERSION, load_versions, pick
 from .generate.answer import answer as grounded_answer
 from .generate.answer import format_answer
 from .generate.evaluate import evaluate_grounding, load_grounding
@@ -56,6 +67,8 @@ RERANK_EXPECTATIONS = Path("eval/rerank.yaml")
 RERANK_REPORT = Path("reports/reranking.md")
 GROUNDING_QUESTIONS = Path("eval/grounding.yaml")
 GROUNDING_REPORT = Path("reports/grounding.md")
+CALIBRATION_REPORT = Path("reports/calibration.md")
+EVALUATION_REPORT = Path("reports/evaluation.md")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -336,6 +349,39 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="skip the jev reading of each answer (grounded, fabricated, gap named)",
     )
+    grounding_cmd.add_argument(
+        "--version",
+        default=DEFAULT_VERSION,
+        help=f"the pipeline version to run, from eval/versions.yaml (default {DEFAULT_VERSION}: the current flags)",
+    )
+    grounding_cmd.add_argument(
+        "--save",
+        metavar="NAME",
+        help="save the run as eval/runs/NAME/ (default <version>-<generator>)",
+    )
+    grounding_cmd.add_argument(
+        "--no-report",
+        action="store_true",
+        help="save the run but leave reports/grounding.md alone",
+    )
+    calibrate_cmd = commands.add_parser(
+        "calibrate",
+        help="compare the judge and the mechanical checks to the hand labels, write reports/calibration.md",
+    )
+    calibrate_cmd.add_argument("--labels", type=Path, default=LABELS, help=f"default {LABELS}")
+    calibrate_cmd.add_argument(
+        "--run", help="the saved run to read the answers from (default: the one the labels name)"
+    )
+    pipeline_cmd = commands.add_parser(
+        "evaluate-pipeline",
+        help="compare two saved runs metric by metric against the gates, write reports/evaluation.md; exit 1 when a critical gate fails",
+    )
+    pipeline_cmd.add_argument("--baseline", help="a run under eval/runs/")
+    pipeline_cmd.add_argument("--candidate", help="a run under eval/runs/")
+    pipeline_cmd.add_argument(
+        "--list-metrics", action="store_true", help="print every metric a gate can name"
+    )
+    pipeline_cmd.add_argument("--list-runs", action="store_true", help="print the saved runs")
     args = parser.parse_args(argv)
 
     try:
@@ -416,7 +462,8 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "evaluate-grounding":
             bench, extra = load_all(BENCHMARK, HYBRID_QUERIES)
             adversarial = load_grounding(GROUNDING_QUESTIONS, {q.id for q in [*bench.queries, *extra]})
-            second = DEFAULT_RETRIEVAL.rerank
+            version = pick(load_versions(), args.version)
+            second = version.retrieval.rerank
             grounding = evaluate_grounding(
                 Index.load(INDEX_DIR / DEFAULT_MODEL),
                 load_embedder(DEFAULT_MODEL),
@@ -426,10 +473,59 @@ def main(argv: list[str] | None = None) -> None:
                 adversarial,
                 load_generator(args.generator, args.effort),
                 load_reranker(second.model) if second is not None else None,
+                retrieval=version.retrieval,
                 limit=args.limit,
                 judge=None if args.no_judge else load_judge(),
             )
-            write_grounding_report(grounding, GROUNDING_REPORT)
-            print(f"wrote {GROUNDING_REPORT}")
+            saved = from_grounding(
+                grounding, args.save or f"{version.name}-{args.generator}", version.name, version.description
+            )
+            print(f"saved the run to {saved.save(RUNS_DIR / saved.name)}/")
+            if not args.no_report:
+                write_grounding_report(grounding, GROUNDING_REPORT)
+                print(f"wrote {GROUNDING_REPORT}")
+        elif args.command == "calibrate":
+            labelled_run = args.run or (yaml.safe_load(args.labels.read_text()) or {}).get("run", "")
+            if not labelled_run:
+                raise ValueError(f"{args.labels} names no run and --run was not given")
+            labelled = Run.load(RUNS_DIR / labelled_run)
+            calibration = calibrate(labelled, load_labels(args.labels, labelled))
+            write_calibration_report(calibration, CALIBRATION_REPORT)
+            for s in calibration.signals:
+                print(f"{s.name}: {s.agreement.agreement:.0%} agreement over {s.agreement.n}")
+            print(f"wrote {CALIBRATION_REPORT}")
+        elif args.command == "evaluate-pipeline":
+            if args.list_runs:
+                for d in sorted(RUNS_DIR.iterdir()) if RUNS_DIR.exists() else []:
+                    if (d / "manifest.json").exists():
+                        m = Run.load(d).manifest
+                        print(
+                            f"{d.name}: {m.version}, {m.generator} via {m.backend}, {m.questions} questions, {m.created_at[:10]}"
+                        )
+                return
+            if args.list_metrics:
+                if not RUNS_DIR.exists() or not any(RUNS_DIR.iterdir()):
+                    raise ValueError("no saved run to list the metrics of; run evaluate-grounding first")
+                sample = Run.load(
+                    next(d for d in sorted(RUNS_DIR.iterdir()) if (d / "manifest.json").exists())
+                )
+                for m in metrics(sample).values():
+                    print(f"{m.name}: {m.description} ({m.better} is better)")
+                return
+            if not args.baseline or not args.candidate:
+                raise ValueError(
+                    "--baseline and --candidate name two runs under eval/runs/ (see --list-runs)"
+                )
+            comparison = compare_runs(
+                Run.load(RUNS_DIR / args.baseline), Run.load(RUNS_DIR / args.candidate), load_gates()
+            )
+            write_evaluation_report(comparison, EVALUATION_REPORT)
+            for r in comparison.results:
+                print(
+                    f"{'pass' if r.passed else ('FAIL' if r.gate.critical else 'warn')}  {r.gate.metric}: {r.detail}"
+                )
+            print(f"{comparison.verdict}; wrote {EVALUATION_REPORT}")
+            if comparison.blocked:
+                parser.exit(1)
     except (FileNotFoundError, ModelMismatch, ValueError) as error:
         parser.exit(1, f"error: {error}\n")

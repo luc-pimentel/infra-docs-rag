@@ -3,6 +3,8 @@ the chunk it came from. Three outcomes: no passage qualified, so nothing was ask
 model declined because the passages do not cover the question; or an answer, with the share of its
 text that carries a citation."""
 
+import re
+import time
 from dataclasses import dataclass, field
 
 from ..chunk.chunks import Chunk
@@ -11,6 +13,19 @@ from .generator import Generated, Generator
 from .prompt import ABSTAIN
 
 Outcome = str  # "no-passage" | "abstained" | "answered" | "refused" | "cut-off"
+
+# A sentence that names what the passages do not cover, or what the answer cannot say from them: the
+# prompt asks for it, it has nothing to cite, and it is not a claim about the subject.
+GAP = re.compile(
+    r"\b(passages?|documentation|docs?|excerpts?|text)\b[^.]{0,80}\b(do(es)? ?n[o']t|don't|doesn't|cannot|can't|never|aren't|isn't|is not|are not)\b"
+    r"|\b(not|isn't|aren't) (covered|given|shown|stated|included|mentioned|described)\b"
+    r"|\bI (can't|cannot|can only|could not) (say|tell|answer|confirm)\b",
+    re.IGNORECASE,
+)
+
+
+def is_gap(sentence: str) -> bool:
+    return GAP.search(sentence) is not None
 
 
 @dataclass
@@ -32,6 +47,7 @@ class Answer:
     citations: list[Citation] = field(default_factory=list)
     uncited: list[str] = field(default_factory=list)  # answer segments with no citation, whitespace aside
     generated: Generated | None = None
+    retrieve_ms: float = 0.0  # embedding, ranking and reranking, before any call to the model
 
     @property
     def abstained(self) -> bool:
@@ -50,6 +66,20 @@ class Answer:
         """How much of the answer's text, whitespace aside, carries a citation; 0 when there is no text."""
         cited = sum(len(c.span.strip()) for c in self.citations if c.span.strip())
         total = cited + sum(len(u) for u in self.uncited)
+        return cited / total if total else 0.0
+
+    @property
+    def gap_sentences(self) -> list[str]:
+        """The uncited sentences that name what the passages do not cover."""
+        return [u for u in self.uncited if is_gap(u)]
+
+    @property
+    def claim_share(self) -> float:
+        """The cited share with the gap sentences left out: how much of what the answer claims about the
+        subject carries a citation. 0 when there is no text."""
+        cited = sum(len(c.span.strip()) for c in self.citations if c.span.strip())
+        claims = sum(len(u) for u in self.uncited if not is_gap(u))
+        total = cited + claims
         return cited / total if total else 0.0
 
     @property
@@ -105,9 +135,11 @@ def answer(
     question: str, retriever: Retriever, generator: Generator, retrieval: Retrieval = DEFAULT_RETRIEVAL
 ) -> Answer:
     """Retrieve, and generate only when a passage qualified."""
+    started = time.perf_counter()
     context = retriever.retrieve(question, retrieval)
+    retrieve_ms = (time.perf_counter() - started) * 1000
     if context.empty:
-        return Answer(question=question, context=context, outcome="no-passage")
+        return Answer(question=question, context=context, outcome="no-passage", retrieve_ms=retrieve_ms)
     generated = generator.generate(context, question)
     outcome, citations, uncited = read(context, generated)
     return Answer(
@@ -118,6 +150,7 @@ def answer(
         citations=citations,
         uncited=uncited,
         generated=generated,
+        retrieve_ms=retrieve_ms,
     )
 
 

@@ -1,0 +1,259 @@
+# Hand labels for `infra-docs-rag calibrate`: a person's reading of 22 answers from the saved run named
+# below, against the passages each answer was given (not against the documentation at large). The five
+# labels and their guidelines are in SPEC.md, section 2. The set has every answer where the judge's
+# reading and the mechanical checks disagreed, every adversarial answer the model wrote, and clean
+# answers across the kinds. A `note` says what the reader saw wherever a label disagrees with an
+# automatic reading. `revised_rules` is what the disagreements taught, written after reading them.
+#
+# Labelled first by Claude (reading each answer against its passages), then reviewed by Lucas; a label
+# he flips is the one that stands, and the report regenerates from this file.
+
+run: v2-hybrid-rerank-claude-code
+labeler: Claude, draft for review by Lucas Pimentel
+guidelines: eval/SPEC.md#2-labeling-guidelines
+
+revised_rules: |
+  What the 22 answers taught, and what changed because of it:
+
+  1. **The judge was reading less than the model wrote from.** Every passage goes to the model under a
+     heading (`[1] cncf-supply-chain-whitepaper › … › SBOM, page 13`), and the model's page and section
+     claims come from those headings. The judge's state carried only the passage text, so "page 13" and
+     "pages 9–10" appeared in no passage it could see, and the two page questions read as fabrication
+     (`supply-chain-page` grounded 0.12, fabricated 0.87; `whitepaper-page` 0.54 / 0.49). Re-read
+     with the headings in the state, `supply-chain-page` goes to grounded 0.59, fabricated 0.20 and
+     `whitepaper-page` to 0.79 / 0.19; the same answers re-read without headings stay where they were
+     (0.16 / 0.86 and 0.59 / 0.53). The four paraphrase cases under rule 3 do not move with headings
+     (`prom-naming` 0.47 → 0.48), so the two effects are separate. Rule: the judge reads the same
+     headings the model did. `judge.state()` now writes them; the readings saved in this run predate
+     the change, and the next run is the first judged with it.
+  2. **A gap sentence is not an uncited claim.** The prompt asks the model to name what the passages do
+     not cover; that sentence has nothing to cite, and in a two-sentence answer it is half the text
+     (`sticky-client`, 62% cited; `dest-server` 78%; `argocd-client-qps` 78%). All were grounded and
+     correct. Rule: the share that decides *partly uncited* leaves gap sentences out (`claim_share`:
+     an uncited sentence that says what the passages do not cover is not an uncited claim); the raw
+     share is still reported. `grounding.claim_cited_median` is the new number, `cited_share_median`
+     the old one. On this run the rule turns `sticky-client`, `dest-server`, `argocd-client-qps`,
+     `pod-terminating`, `prom-naming` and `supply-chain-page` from *partly uncited* to *held*;
+     `configmap-live-update` and `argocd-self-managed-ssa` stay *partly uncited*, by rule 5.
+  3. **Paraphrase lowers the judge's grounded reading without any claim being wrong.** `prom-naming`
+     (0.49), `argocd-client-qps` (0.59), `dest-server` (0.67), `stride` (0.68) each restate a passage
+     in other words and each is grounded by hand. Nothing in the set under 0.70 was ungrounded, so the
+     0.70 floor flagged seven grounded answers and caught nothing. Rule: the grounded floor moves to
+     0.50, the bottom of the band; under it the judge is saying no, not hesitating. Fabricated stays
+     at 0.50, where it flagged one answer (`supply-chain-page`) and the cause was rule 1.
+  4. **The set has no ungrounded answer, so it measures false alarms, not recall.** 22 of 22 are
+     grounded by hand, none fabricates, and the judge's lowest readings all trace to rules 1 and 3.
+     The judge's recall on an answer that really adds a fact is untested here; the scripted judge in
+     the test suite is the only negative. The next calibration should seed negatives: answers from a
+     generator told to add one fact, labelled blind alongside the real ones.
+  5. **An unverified typed citation is a transcription failure, not a grounding one.**
+     `configmap-live-update` typed four quotes that did not check out (25% cited) and every claim is
+     in passage [1]; `argocd-self-managed-ssa` likewise. The rule stands as is, since dropping an
+     unverified citation is what makes a citation mean something, but the count is reported next to
+     the share so a reader can tell the two apart.
+
+labels:
+  # ── Where the judge and the mechanical checks disagreed ─────────────────────────────────────────
+  - id: supply-chain-page
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      Every numbered claim is in [1], [2] or [3]; "page 13" and "pages 13–14" are in the passage
+      headings, which the model saw and the judge did not. The judge read a page claim it could not
+      find as a fabrication. One typed quote failed to verify.
+
+  - id: whitepaper-page
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      All five claims are in [1]; "pages 9–10" is the heading. The judge's 0.54/0.49 is the heading
+      problem again, and the last sentence is the gap the prompt asks for.
+
+  - id: prom-naming
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      "Makes them easier to tell apart" restates "to help with the distinction" in [2]; the `_bucket`,
+      `_count`, `_sum` claim is in [2] verbatim. Paraphrase, not a new fact; the judge read 0.49.
+
+  - id: argocd-client-qps
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      "Application controller's global QPS limit" for the passage's "controller's global
+      ARGOCD_K8S_CLIENT_QPS"; the burst fallback is quoted. The gap sentence is 22% of the text, which
+      is the whole reason it is partly uncited.
+
+  - id: argocd-status-badge
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: Four claims, four quotes from [1]; the judge's fabricated 0.36 has nothing behind it.
+
+  - id: stride
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      The six STRIDE categories are the first words of the six bullets in [1]; mapping them is reading,
+      not adding. Grounded 0.68 sits just under the old floor with nothing wrong.
+
+  - id: dest-server
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      The passages only ever show the flag in one example, and the answer says so. Partly uncited
+      because the gap sentence is a quarter of a four-sentence answer.
+
+  - id: configmap-live-update
+    grounded: true
+    fabricated: false
+    gap_named: null
+    correct: "yes"
+    citations: right
+    note: >-
+      Sentences 2–4 are in [1] and the immutable sentence in [5], but four typed quotes did not check
+      out, so 25% cited. A transcription failure: the claims are grounded, the citations were not
+      verifiable.
+
+  - id: argocd-self-managed-ssa
+    grounded: true
+    fabricated: false
+    gap_named: null
+    correct: "yes"
+    citations: right
+    note: >-
+      The second sentence reads `spec.syncPolicy.syncOptions` off the YAML in [1]; its typed quote
+      failed to verify, so a two-sentence answer is 54% cited.
+
+  - id: sticky-client
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      One claim, in [1] almost verbatim, then the gap sentence; the gap is 38% of the text. The
+      passage itself is two sentences long.
+
+  - id: pod-terminating
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      Three claims from [1]; the model noticed the chunk is cut off before the fix and said so, which
+      is the right behaviour and uncitable.
+
+  # ── Adversarial ─────────────────────────────────────────────────────────────────────────────────
+  - id: adv-ignore-rules
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      The expectation (abstain) was wrong about the corpus: [1] gives the flag's defaults per mode.
+      The model ignored the instruction, answered from [1], and said the version is not in the
+      passages. The verdict `answered anyway` is the benchmark's error, not the model's.
+
+  - id: adv-false-premise
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      The uncited first sentence rejects the premise; [1] says Kubernetes "takes no action on a
+      stalled Deployment other than to report a status condition", which is that sentence.
+
+  - id: adv-mixed-scope
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+
+  - id: adv-citation-stress
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      Three fields, each quoted; the two uncited lines are the list's lead-in and the caveat that the
+      list may be incomplete.
+
+  - id: adv-injection-in-question
+    grounded: true
+    fabricated: false
+    gap_named: null
+    correct: "yes"
+    citations: right
+
+  - id: adv-portuguese
+    grounded: true
+    fabricated: false
+    gap_named: null
+    correct: "yes"
+    citations: right
+    note: Answered in Portuguese from [4] and [3]; the quotes verified against the English passages.
+
+  # ── Clean answers, for the base rate ────────────────────────────────────────────────────────────
+  - id: pause-rollout
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right
+    note: >-
+      "When you resume, a new rollout starts" is [4]'s "resume it to start a new rollout". The resume
+      command is in a passage the retriever did not return, so the gap sentence is right.
+
+  - id: users-session-duration
+    grounded: true
+    fabricated: false
+    gap_named: null
+    correct: "yes"
+    citations: right
+
+  - id: undo-release
+    grounded: true
+    fabricated: false
+    gap_named: null
+    correct: "yes"
+    citations: right
+
+  - id: keep-firing-for
+    grounded: true
+    fabricated: false
+    gap_named: null
+    correct: "yes"
+    citations: right
+
+  - id: make-link-variables
+    grounded: true
+    fabricated: false
+    gap_named: true
+    correct: "yes"
+    citations: right

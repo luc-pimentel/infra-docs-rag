@@ -1,0 +1,29 @@
+# Pipeline versions `infra-docs-rag evaluate-grounding --version <name>` can run and `evaluate-pipeline`
+# can compare. Each names a retrieval configuration; the chunking, index, generator and prompt are the
+# same for every version and the saved run's manifest records them. `default` is always available and
+# means whatever `retrieve` and `answer` do with no flags.
+#
+# v1 is the pipeline as it stood after stage 04: the cosine ranking alone, no reranker. v2 adds stages
+# 05 and 06, hybrid fusion and the cross-encoder, and is what `default` currently resolves to. The
+# regression gates in gates.yaml are what a change from v1 to v2 (or v2 to a v3) has to clear.
+
+versions:
+  - name: v1-dense
+    description: dense retrieval alone, as after stage 04; cosine top 5 over the 0.50 floor, no reranker
+    retrieval:
+      k: 5
+      min_score: 0.5
+      mode: dense
+
+  - name: v2-hybrid-rerank
+    description: hybrid weighted fusion (α 0.5) reranked by bge-base over 20 candidates, the stage 06 default
+    retrieval:
+      k: 5
+      min_score: 0.5
+      mode: hybrid
+      fusion:
+        strategy: weighted
+        alpha: 0.5
+      rerank:
+        model: bge-base
+        candidates: 20

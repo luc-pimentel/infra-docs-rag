@@ -87,10 +87,16 @@ class Judge(Protocol):
 
 
 def state(context: Context, question: str, answer_text: str) -> str:
-    """What the judge reads: the passages by number, the question, the answer with its markers."""
+    """What the judge reads: the passages by number, each under the heading the model saw it under (a
+    page or section claim in the answer comes from there), the question, the answer with its markers."""
+    return state_of([(s.heading, s.chunk.text) for s in context.sources], question, answer_text)
+
+
+def state_of(passages: list[tuple[str, str]], question: str, answer_text: str) -> str:
+    """The state from (heading, text) pairs; the heading already starts with `[n]`."""
     lines = ["PASSAGES"]
-    for s in context.sources:
-        lines.append(f"[{s.n}] {s.chunk.text}")
+    for heading, text in passages:
+        lines.append(f"{heading}\n{text}")
     lines += ["", "QUESTION", question, "", "ANSWER", answer_text]
     return "\n".join(lines)
 
