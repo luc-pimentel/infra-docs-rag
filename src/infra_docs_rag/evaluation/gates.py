@@ -113,12 +113,18 @@ def delta(baseline: Metric, candidate: Metric) -> str:
         return "–"
     d = candidate.value - baseline.value
     if baseline.shown.startswith("$"):
-        return f"{d:+.2f} $"
+        return (
+            f"{'+' if d >= 0 else '-'}${abs(d):.4f}"
+            if abs(d) < 0.01
+            else f"{'+' if d >= 0 else '-'}${abs(d):.2f}"
+        )
     if baseline.shown.endswith("ms"):
         return f"{d:+,.0f} ms"
-    if "%" in baseline.shown or (0 <= baseline.value <= 1 and 0 <= candidate.value <= 1):
-        return f"{d:+.0%}" if "(" in baseline.shown or "%" in baseline.shown else f"{d:+.2f}"
-    return f"{d:+g}"
+    if "%" in baseline.shown:
+        return f"{d:+.0%}"
+    if abs(baseline.value) >= 10 or abs(candidate.value) >= 10:
+        return f"{d:+,.0f}"
+    return f"{d:+.2f}"
 
 
 @dataclass

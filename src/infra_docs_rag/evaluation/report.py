@@ -28,19 +28,20 @@ def write_report(cmp: Comparison, output: Path) -> None:
         "gates in [`eval/gates.yaml`](../eval/gates.yaml) say which changes block.\n"
     )
     add("## Summary\n")
-    add(f"**{cmp.verdict.capitalize()}.** ")
-    if cmp.failed:
-        add(
+    add(
+        f"**{cmp.verdict.capitalize()}.** "
+        + (
             "Failed: "
             + "; ".join(
                 f"`{r.gate.metric}` {r.gate.label} ({r.detail}){'' if r.gate.critical else ', warning'}"
                 for r in cmp.failed
             )
             + "."
+            if cmp.failed
+            else "Every gate cleared."
         )
-    else:
-        add("Every gate cleared.")
-    add("")
+        + "\n"
+    )
     add("| | Baseline | Candidate |\n|---|---|---|")
     add(f"| Run | `{cmp.baseline.name}` | `{cmp.candidate.name}` |")
     add(
