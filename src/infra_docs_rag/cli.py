@@ -27,6 +27,7 @@ from .evaluation.metrics import metrics
 from .evaluation.report import write_report as write_evaluation_report
 from .evaluation.runs import RUNS_DIR, Run, from_grounding
 from .evaluation.versions import DEFAULT_VERSION, Version
+from .evaluation.versions_report import write_report as write_versions_report
 from .generate.answer import answer as grounded_answer
 from .generate.answer import format_answer, marked
 from .generate.cache import CACHE, CachedGenerator, GenerationCache
@@ -86,6 +87,7 @@ GROUNDING_QUESTIONS = Path("eval/grounding.yaml")
 GROUNDING_REPORT = Path("reports/grounding.md")
 CALIBRATION_REPORT = Path("reports/calibration.md")
 EVALUATION_REPORT = Path("reports/evaluation.md")
+VERSIONS_REPORT = Path("reports/versions.md")
 OBSERVABILITY_REPORT = Path("reports/observability.md")
 LATENCY_REPORT = Path("reports/latency-cost.md")
 LATENCY_DATA = Path("eval/latency.json")
@@ -558,6 +560,12 @@ def main(argv: list[str] | None = None) -> None:
         "--list-metrics", action="store_true", help="print every metric a gate can name"
     )
     pipeline_cmd.add_argument("--list-runs", action="store_true", help="print the saved runs")
+    pipeline_cmd.add_argument(
+        "--runs",
+        nargs="+",
+        metavar="RUN",
+        help="three or more runs in release order: write reports/versions.md with them side by side and the gates between each",
+    )
     latency_cmd = commands.add_parser(
         "evaluate-latency",
         help=f"profile every configuration on the benchmark workload (no model calls), write {LATENCY_DATA} and reports/latency-cost.md",
@@ -568,6 +576,21 @@ def main(argv: list[str] | None = None) -> None:
         help=f"rewrite the report from {LATENCY_DATA} without profiling again",
     )
     latency_cmd.add_argument("--only", nargs="*", help="profile only these configurations (by name)")
+    serve_cmd = commands.add_parser(
+        "serve",
+        help="serve the released pipeline over HTTP (FastAPI; POST /answer, GET /health, /release, /traces)",
+    )
+    serve_cmd.add_argument("--host", default="127.0.0.1")
+    serve_cmd.add_argument("--port", type=int, default=8000)
+    serve_cmd.add_argument(
+        "--generator",
+        choices=list(GENERATORS),
+        help=f"default $INFRA_DOCS_RAG_GENERATOR or {DEFAULT_GENERATOR}",
+    )
+    serve_cmd.add_argument(
+        "--version", help="a version from eval/versions.yaml (default: the current release)"
+    )
+    serve_cmd.add_argument("--no-cache", action="store_true", help="no generation cache")
     traces_cmd = commands.add_parser(
         "traces",
         help=f"summarize the trace log ({TRACES}); --last N or --id ID prints traces; --report writes reports/observability.md",
@@ -622,6 +645,18 @@ def main(argv: list[str] | None = None) -> None:
                 args.trace,
                 args.judge,
             )
+        elif args.command == "serve":
+            import uvicorn
+
+            from .service.app import create_app, load_service
+
+            application = create_app(
+                loader=lambda: load_service(
+                    args.generator, version_name=args.version, use_cache=not args.no_cache
+                )
+            )
+            print(f"serving on http://{args.host}:{args.port} (docs at /docs)")
+            uvicorn.run(application, host=args.host, port=args.port, log_level="warning")
         elif args.command == "evaluate-latency":
             if args.from_saved:
                 workload = load_workload(LATENCY_DATA)
@@ -831,6 +866,17 @@ def main(argv: list[str] | None = None) -> None:
                 )
                 for m in metrics(sample).values():
                     print(f"{m.name}: {m.description} ({m.better} is better)")
+                return
+            if args.runs:
+                if len(args.runs) < 2:
+                    raise ValueError("--runs takes two or more runs, in release order")
+                write_versions_report(
+                    [Run.load(RUNS_DIR / name) for name in args.runs],
+                    load_gates(),
+                    Releases.load(RELEASES),
+                    VERSIONS_REPORT,
+                )
+                print(f"wrote {VERSIONS_REPORT}")
                 return
             if not args.baseline or not args.candidate:
                 raise ValueError(

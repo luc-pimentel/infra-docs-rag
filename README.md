@@ -8,7 +8,46 @@ cover a question, the service says so instead of guessing.
 uv run infra-docs-rag answer "How do I undo a bad release?"
 ```
 
-**Status:** work in progress. Unticked items below are planned, not built.
+**Status:** complete through the capstone. [`docs/capstone.md`](docs/capstone.md) is the design in one
+page; [`docs/demo.md`](docs/demo.md) is the fifteen-minute demo.
+
+## Architecture
+
+**Request flow.** A question through `answer`, the service or a benchmark run:
+
+```mermaid
+flowchart LR
+    q([question]) --> e[embed<br>bge-small]
+    e --> d[dense<br>cosine over 497]
+    q --> l[lexical<br>BM25]
+    d --> f[fuse<br>weighted α 0.5]
+    l --> f
+    f --> r[rerank<br>bge-reranker-base, top 20]
+    r --> p[pack<br>floor 0.50 · budget 1,200 tokens · headings]
+    p -->|no passage| a0([abstention sentence])
+    p -->|passages| g[generate<br>Claude, citations]
+    g -->|abstained / answered / error| j[judge<br>grounded · fabricated · gap named]
+    j --> t[(trace)]
+    g --> t
+    p --> t
+```
+
+Retrieval is 1.6 s at the median (the cross-encoder, on CPU), generation 4–5 s. Every stage's time,
+both rankings with their scores, the answer, the citations and the lineage go to one trace line.
+
+**Data flow.** From the source list to a release:
+
+```mermaid
+flowchart LR
+    s[(sources.yaml)] --> fetch --> raw[(data/raw)] --> ingest --> docs[(documents.jsonl)] --> chunk --> ch[(chunks)] --> embed --> idx[(index version)]
+    idx --> ev[evaluate<br>69 questions] --> run[(eval/runs/&lt;name&gt;<br>+ lineage)]
+    run --> gate --> rel[(eval/releases.yaml)]
+    rel -. current .-> idx
+    rel -. version .-> serve[serve / answer]
+```
+
+`pipeline run` runs the chain and skips what is up to date; a release is a run that cleared the gates
+against the one before; `serve` and `answer` read the current release.
 
 ## Roadmap
 
@@ -66,8 +105,10 @@ Each stage ships into this repo, so the service grows with the checklist.
   cost, fourteen configurations measured before and after on the benchmark without a model call, a
   generation cache, the indexing batch sweep, and the matrix across latency, cost, retrieval quality,
   groundedness and abstention; v3 is the cut that was free ([report](reports/latency-cost.md))
-- [ ] 12 · Capstone: FastAPI service, eval report across three versions, design doc, demo and a
-  postmortem
+- [x] 12 · Capstone: a FastAPI service over the released pipeline, three versions measured end to end
+  with the gates between each and the rollback criteria, the design doc, the demo script and a
+  postmortem ([design](docs/capstone.md), [versions](reports/versions.md), [demo](docs/demo.md),
+  [postmortem](docs/postmortem.md))
 
 ## Corpus
 
@@ -344,6 +385,22 @@ with the generation side read from the saved runs. The profiles are saved to
   MRR −0.03) but does not combine with the budget. A replay of the benchmark through the cache was 68/68
   hits.
 
+## Service
+
+`serve` puts the released pipeline behind HTTP (FastAPI, one process, the index and models loaded
+once; interactive docs at `/docs`).
+
+- `POST /answer` `{"question": "...", "judge": false, "no_cache": false}` → the cited answer, the
+  citations with the passage text each rests on, the sources with their scores, the lineage, the stage
+  timings, tokens and cost, whether the cache answered, and a trace id. A question the floor stops
+  returns the abstention sentence with `outcome: no-passage`; a model call that fails returns it with
+  `outcome: error` and the reason, never a 500.
+- `GET /health` → the checks `pipeline health` prints, 503 when one fails. `GET /release` → what is
+  serving and the release record. `GET /versions`. `GET /traces/{id}`, `GET /traces?last=N`,
+  `GET /traces/summary`.
+- The generator comes from `--generator` or `INFRA_DOCS_RAG_GENERATOR` (the API model by default;
+  `claude-code` for the subscription), the effort from `INFRA_DOCS_RAG_EFFORT`.
+
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew install tesseract`).
@@ -386,6 +443,8 @@ uv run infra-docs-rag pipeline health                            # index, releas
 uv run infra-docs-rag evaluate-latency                           # profile every configuration on the benchmark (no model), write the report; --from-saved rewrites it
 uv run infra-docs-rag evaluate-grounding --generator claude-code --version v3-budget --cache --save v3-replay   # a replay through the generation cache
 uv run python scripts/warm_cache.py eval/runs/v3-budget-claude-code   # fill the cache from a saved run, no model call
+uv run infra-docs-rag evaluate-pipeline --runs v1-dense-claude-code v2-hybrid-rerank-claude-code v3-budget-claude-code   # three versions side by side → reports/versions.md
+uv run infra-docs-rag serve --generator claude-code              # the service on http://127.0.0.1:8000, docs at /docs
 uv run pytest
 ```
 
@@ -396,8 +455,8 @@ to `data/traces/traces.jsonl`, and the evidence to [`reports/ingestion.md`](repo
 [`reports/retrieval.md`](reports/retrieval.md), [`reports/hybrid-search.md`](reports/hybrid-search.md),
 [`reports/reranking.md`](reports/reranking.md), [`reports/grounding.md`](reports/grounding.md),
 [`reports/calibration.md`](reports/calibration.md), [`reports/evaluation.md`](reports/evaluation.md) and
-[`reports/orchestration.md`](reports/orchestration.md), [`reports/observability.md`](reports/observability.md)
-and [`reports/latency-cost.md`](reports/latency-cost.md); the generation cache to `data/cache/`; saved benchmark runs go to `eval/runs/` and
+[`reports/orchestration.md`](reports/orchestration.md), [`reports/observability.md`](reports/observability.md),
+[`reports/latency-cost.md`](reports/latency-cost.md) and [`reports/versions.md`](reports/versions.md); the generation cache to `data/cache/`; saved benchmark runs go to `eval/runs/` and
 releases to `eval/releases.yaml`, both committed.
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
 needs all three, about 660 MB). The first `retrieve` or `search` downloads the default reranker
