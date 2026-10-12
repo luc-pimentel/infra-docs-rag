@@ -104,6 +104,14 @@ def add_pipeline_commands(commands: argparse._SubParsersAction) -> None:
     release.add_argument("--candidate", required=True, metavar="RUN", help="a run under eval/runs/")
     release.add_argument("--note", default="", help="why, for the record")
     sub.add_parser("rollback", help="make the previous release current again")
+    canary = sub.add_parser(
+        "canary",
+        help="ask the released pipeline the canary questions (eval/canary.yaml); exit 1 when one fails",
+    )
+    canary.add_argument("--version", help="a version from eval/versions.yaml (default: the current release)")
+    canary.add_argument("--generator", default="claude-code", help="the generator (default claude-code)")
+    canary.add_argument("--effort", default="medium", help="how hard the model thinks (default medium)")
+    sub.add_parser("health", help="is the service in a state to answer? exit 1 when a check fails")
 
 
 def paths_and_config(args: argparse.Namespace, model: str, chunking) -> tuple[Paths, Config]:

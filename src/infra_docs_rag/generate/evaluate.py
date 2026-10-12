@@ -2,6 +2,7 @@
 grounded in the right passage, abstained, or neither, and what each call cost."""
 
 import statistics
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -167,7 +168,10 @@ def evaluate_grounding(
     retrieval: Retrieval = DEFAULT_RETRIEVAL,
     limit: int | None = None,
     judge: Judge | None = None,
+    tracer: Callable[[Answer, Judgement | None], None] | None = None,
 ) -> Grounding:
+    """`tracer`, when given, is called with every answer and its judge reading, so the run can be
+    written to the trace log as well as saved."""
     retriever = Retriever(index, embedder, reranker)
     by_id = {d.source_id: d for d in usable(docs)}
     labelled = [*bench.queries, *extra]
@@ -210,6 +214,8 @@ def evaluate_grounding(
             ) as error:  # the judge is a reading, not a verdict: its absence is recorded, not fatal
                 print(f"{qid}: the judge failed ({str(error)[:120]}); no reading")
         cases.append(Case(qid, kind, expect, hypothesis, a, retrieved, cited, judgement, flags))
+        if tracer is not None:
+            tracer(a, judgement)
         line = f"{qid}: {a.outcome}" + (f", {a.cited_share:.0%} cited" if a.outcome == "answered" else "")
         if a.outcome == "error":
             line += f" ({a.error})"

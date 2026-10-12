@@ -1,7 +1,7 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | evaluate-pipeline | pipeline run | pipeline status | pipeline index | pipeline release | pipeline rollback`,
-run from the repo root."""
+calibrate | evaluate-pipeline | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
 import re
@@ -28,7 +28,7 @@ from .evaluation.report import write_report as write_evaluation_report
 from .evaluation.runs import RUNS_DIR, Run, from_grounding
 from .evaluation.versions import DEFAULT_VERSION, Version
 from .generate.answer import answer as grounded_answer
-from .generate.answer import format_answer
+from .generate.answer import format_answer, marked
 from .generate.evaluate import evaluate_grounding, load_grounding
 from .generate.generator import DEFAULT_EFFORT, GENERATORS, load_generator
 from .generate.generator import DEFAULT_MODEL as DEFAULT_GENERATOR
@@ -40,8 +40,14 @@ from .ingest.models import Document
 from .ingest.pipeline import run
 from .ingest.report import write_report
 from .ingest.sources import fetch, load_sources
+from .observe.canary import load_canary, run_canary
+from .observe.health import checks, format_checks, worst
+from .observe.summary import format_summary, summarize
+from .observe.summary import write_report as write_observability_report
+from .observe.trace import TRACES, TraceLog, as_json, trace_answer
+from .observe.trace import render as render_trace
 from .pipeline import commands as pipeline_commands
-from .pipeline.releases import RELEASES
+from .pipeline.releases import RELEASES, Releases
 from .pipeline.stages import Evaluation, Paths
 from .pipeline.store import Store
 from .retrieve.compare import compare, load_all
@@ -75,6 +81,8 @@ GROUNDING_QUESTIONS = Path("eval/grounding.yaml")
 GROUNDING_REPORT = Path("reports/grounding.md")
 CALIBRATION_REPORT = Path("reports/calibration.md")
 EVALUATION_REPORT = Path("reports/evaluation.md")
+OBSERVABILITY_REPORT = Path("reports/observability.md")
+CANARY = Path("eval/canary.yaml")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -169,10 +177,18 @@ def retrieve(query: str, version: Version, pinned: str | None) -> None:
 
 
 def answer(
-    query: str, version: Version, pinned: str | None, generator: str, effort: str, show_prompt: bool
+    query: str,
+    version: Version,
+    pinned: str | None,
+    generator: str,
+    effort: str,
+    show_prompt: bool,
+    show_trace: bool = False,
+    judge: bool = False,
 ) -> None:
-    """A grounded answer, or the prompt that would produce one, under a pipeline version."""
-    r, _, index_id = retriever(version, pinned)
+    """A grounded answer, or the prompt that would produce one, under a pipeline version. Every answer
+    leaves a trace in the log; --trace prints it, --judge adds the judge's reading to it."""
+    r, index, index_id = retriever(version, pinned)
     prompt = load_prompt(version.prompt)
     retrieval = version.retrieval
     if show_prompt:
@@ -181,9 +197,25 @@ def answer(
         )
         print(render(r.retrieve(query, retrieval), query, prompt.text(generator)))
         return
-    print(
-        format_answer(grounded_answer(query, r, load_generator(generator, effort, version.prompt), retrieval))
+    gen = load_generator(generator, effort, version.prompt)
+    a = grounded_answer(query, r, gen, retrieval)
+    reading = None
+    if judge and a.outcome == "answered":
+        reading = load_judge().judge(a.context, query, marked(a))
+    lineage = pipeline_commands.lineage(
+        version, index, index_id, prompt, gen.name, a.generated.model if a.generated else ""
     )
+    t = trace_answer(a, version.name, lineage, prompt.version(gen.name), reading, gen.prices)
+    TraceLog(TRACES).append(t)
+    if show_trace:
+        print(render_trace(t))
+        return
+    print(format_answer(a))
+    if reading is not None:
+        print(
+            f"judge: {reading.model} · grounded {reading.grounded:.2f} · fabricated {reading.fabricated:.2f} · gap named {reading.gap_named:.2f}"
+        )
+    print(f"trace {t.trace_id} · {TRACES}")
 
 
 def run_benchmark(
@@ -201,6 +233,9 @@ def run_benchmark(
     second = version.retrieval.rerank
     index, index_id = pipeline_commands.index_for(version, pinned, INDEX_DIR)
     gen = load_generator(generator, effort, version.prompt)
+    prompt = load_prompt(version.prompt)
+    lineage = pipeline_commands.lineage(version, index, index_id, prompt, gen.name, gen.model)
+    log = TraceLog(TRACES)
     grounding = evaluate_grounding(
         index,
         load_embedder(version.embedding),
@@ -213,17 +248,17 @@ def run_benchmark(
         retrieval=version.retrieval,
         limit=limit,
         judge=load_judge() if judge else None,
+        tracer=lambda a, j: log.append(
+            trace_answer(a, f"{version.name}:{name}", lineage, prompt.version(gen.name), j, gen.prices)
+        ),
     )
-    lineage = pipeline_commands.lineage(
-        version, index, index_id, load_prompt(version.prompt), gen.name, grounding.generator
-    )
+    lineage = lineage.model_copy(update={"generator": grounding.generator})
     return grounding, from_grounding(grounding, name, version.name, version.description, lineage)
 
 
 def evaluation_for(args: argparse.Namespace, paths: Paths) -> Evaluation:
     """The evaluate and gate stages of `pipeline run`: the benchmark under --version, saved as a run,
     then compared to the current release's run."""
-    from .pipeline.releases import Releases
     from .pipeline.stages import StageFailed
 
     version, pinned = pipeline_commands.resolve_version(args.version)
@@ -327,6 +362,12 @@ def main(argv: list[str] | None = None) -> None:
         choices=list(PROMPTS),
         help=f"the system prompt, by name in the registry (default the version's, {DEFAULT_PROMPT})",
     )
+    answer_cmd.add_argument(
+        "--trace",
+        action="store_true",
+        help="print the trace (every stage's input, output and time) instead of the answer",
+    )
+    answer_cmd.add_argument("--judge", action="store_true", help="have the judge read the answer too")
     threshold = (
         f"default {DEFAULT_RETRIEVAL.min_score:.2f}"
         if DEFAULT_RETRIEVAL.min_score is not None
@@ -489,6 +530,21 @@ def main(argv: list[str] | None = None) -> None:
         "--list-metrics", action="store_true", help="print every metric a gate can name"
     )
     pipeline_cmd.add_argument("--list-runs", action="store_true", help="print the saved runs")
+    traces_cmd = commands.add_parser(
+        "traces",
+        help=f"summarize the trace log ({TRACES}); --last N or --id ID prints traces; --report writes reports/observability.md",
+    )
+    traces_cmd.add_argument("--last", type=int, help="print the last N traces")
+    traces_cmd.add_argument("--id", help="print one trace")
+    traces_cmd.add_argument("--json", action="store_true", help="print traces as JSON instead of rendered")
+    traces_cmd.add_argument(
+        "--report",
+        action="store_true",
+        help="write the summary and the last traces to reports/observability.md",
+    )
+    traces_cmd.add_argument(
+        "--examples", type=int, default=4, help="traces rendered in full in the report (default 4)"
+    )
     pipeline_commands.add_pipeline_commands(commands)
     args = parser.parse_args(argv)
 
@@ -519,7 +575,38 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "retrieve":
             retrieve(args.query, *resolve(args))
         elif args.command == "answer":
-            answer(args.query, *resolve(args), args.generator, args.effort, args.show_prompt)
+            answer(
+                args.query,
+                *resolve(args),
+                args.generator,
+                args.effort,
+                args.show_prompt,
+                args.trace,
+                args.judge,
+            )
+        elif args.command == "traces":
+            log = TraceLog(TRACES)
+            if args.id:
+                found = log.find(args.id)
+                if found is None:
+                    raise ValueError(f"no trace {args.id} in {TRACES}")
+                print(as_json(found) if args.json else render_trace(found))
+            elif args.last:
+                for t in log.read(last=args.last):
+                    print(as_json(t) if args.json else render_trace(t))
+                    print()
+            else:
+                everything = log.read()
+                current = Store(INDEX_DIR / DEFAULT_MODEL).current()
+                print(format_summary(summarize(everything, current)))
+                if args.report:
+                    examples = [
+                        t for t in everything if t.version.startswith("canary:") or ":" not in t.version
+                    ]
+                    write_observability_report(
+                        everything, OBSERVABILITY_REPORT, examples[-args.examples :], current
+                    )
+                    print(f"wrote {OBSERVABILITY_REPORT}")
         elif args.command == "evaluate":
             evaluation = evaluate(load_documents(DOCUMENTS), load_queries(QUERIES), list(MODELS))
             write_embeddings_report(evaluation, EMBEDDINGS_REPORT)
@@ -588,6 +675,44 @@ def main(argv: list[str] | None = None) -> None:
                     parser.exit(1)
             elif args.pipeline_command == "rollback":
                 pipeline_commands.roll_back(INDEX_DIR)
+            elif args.pipeline_command == "canary":
+                version, pinned = pipeline_commands.resolve_version(args.version)
+                r, index, index_id = retriever(version, pinned)
+                gen = load_generator(args.generator, args.effort, version.prompt)
+                prompt = load_prompt(version.prompt)
+                lineage = pipeline_commands.lineage(version, index, index_id, prompt, gen.name, gen.model)
+                log = TraceLog(TRACES)
+                print(
+                    f"canary under {version.name} · index {version.embedding}/{index_id} · prompt {prompt.version(gen.name)}"
+                )
+                results = run_canary(
+                    load_canary(CANARY),
+                    r,
+                    gen,
+                    version.retrieval,
+                    on_answer=lambda a: log.append(
+                        trace_answer(
+                            a, f"canary:{version.name}", lineage, prompt.version(gen.name), None, gen.prices
+                        )
+                    ),
+                )
+                failed = [x for x in results if not x.passed]
+                print(f"{len(results) - len(failed)}/{len(results)} passed")
+                if failed:
+                    parser.exit(1)
+            elif args.pipeline_command == "health":
+                from .pipeline.stages import Config, Paths, build_pipeline
+
+                found = checks(
+                    INDEX_DIR,
+                    DEFAULT_MODEL,
+                    Releases.load(RELEASES),
+                    build_pipeline(Paths(), Config(), lambda: load_embedder(DEFAULT_MODEL)),
+                    TraceLog(TRACES),
+                )
+                print(format_checks(found))
+                if worst(found) == "fail":
+                    parser.exit(1)
         elif args.command == "calibrate":
             labelled_run = args.run or (yaml.safe_load(args.labels.read_text()) or {}).get("run", "")
             if not labelled_run:
