@@ -15,6 +15,7 @@ from ..embed.index import Manifest
 from ..generate.answer import marked
 from ..generate.evaluate import Case, Grounding
 from ..generate.prompt import SYSTEM, SYSTEM_TYPED
+from ..pipeline.manifest import PipelineManifest
 from ..retrieve.retriever import Retrieval, gate, relevance
 
 RUNS_DIR = Path("eval/runs")
@@ -86,7 +87,7 @@ class CaseRecord(BaseModel):
     expect: Expect
     hypothesis: str
     question: str
-    outcome: str  # no-passage, abstained, answered, refused, cut-off
+    outcome: str  # no-passage, abstained, answered, refused, cut-off, error
     verdict: str  # held, or what went wrong, as the grounding benchmark judged it
     reason: str = ""  # why there is no answer, when there is none
     text: str = ""
@@ -157,6 +158,7 @@ class RunManifest(BaseModel):
     prices: dict[str, float]
     judge: str | None = None
     questions: int
+    lineage: PipelineManifest | None = None  # which version of every stage produced the answers
 
 
 class Run(BaseModel):
@@ -275,7 +277,13 @@ def record(c: Case) -> CaseRecord:
     )
 
 
-def from_grounding(ev: Grounding, name: str, version: str = "default", description: str = "") -> Run:
+def from_grounding(
+    ev: Grounding,
+    name: str,
+    version: str = "default",
+    description: str = "",
+    lineage: PipelineManifest | None = None,
+) -> Run:
     """A grounding benchmark's result as a run to save."""
     return Run(
         manifest=RunManifest(
@@ -294,6 +302,7 @@ def from_grounding(ev: Grounding, name: str, version: str = "default", descripti
             prices=dict(ev.prices),
             judge=ev.judge,
             questions=len(ev.cases),
+            lineage=lineage.model_copy(update={"eval_run_id": name}) if lineage else None,
         ),
         cases=[record(c) for c in ev.cases],
     )

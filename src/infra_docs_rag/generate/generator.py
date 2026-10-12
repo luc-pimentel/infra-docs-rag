@@ -14,7 +14,8 @@ from pathlib import Path
 from typing import Protocol
 
 from ..retrieve.retriever import Context
-from .prompt import SYSTEM, SYSTEM_TYPED, user_content, user_text
+from .prompt import user_content, user_text
+from .prompts import DEFAULT_PROMPT, Prompt, load_prompt
 
 MODELS = {
     # Claude Opus 5.5, the current Opus: $4 / $20 per million input / output tokens, $0.20 per million read
@@ -95,7 +96,9 @@ class ClaudeGenerator:
     """Claude through the official SDK. Credentials come from the environment (`ANTHROPIC_API_KEY`, or an
     `ant auth login` profile); nothing is read from the repository."""
 
-    def __init__(self, model: str = DEFAULT_MODEL, effort: str = DEFAULT_EFFORT) -> None:
+    def __init__(
+        self, model: str = DEFAULT_MODEL, effort: str = DEFAULT_EFFORT, prompt: Prompt | None = None
+    ) -> None:
         import anthropic  # slow import, paid only when a model is used
 
         if model not in MODELS:
@@ -105,13 +108,15 @@ class ClaudeGenerator:
         self.model = model
         self.effort = effort
         self.prices = MODELS[model]
+        self.prompt = prompt or load_prompt()
+        self.system = self.prompt.api
 
     def _create(self, context: Context, question: str):
         """One request: the passages as citable documents, then the question."""
         return self.client.beta.messages.create(
             model=self.model,
             max_tokens=MAX_TOKENS,
-            system=SYSTEM,
+            system=self.system,
             messages=[{"role": "user", "content": user_content(context, question)}],
             output_config={"effort": self.effort},
             # A safety classifier may decline a request; the API then re-runs it on Anthropic's
@@ -258,6 +263,7 @@ class ClaudeCodeGenerator:
         effort: str = DEFAULT_EFFORT,
         binary: str = "claude",
         cwd: Path | None = None,
+        prompt: Prompt | None = None,
     ) -> None:
         if model not in MODELS:
             raise ValueError(f"unknown generator model {model!r}; one of {', '.join(MODELS)}")
@@ -265,6 +271,8 @@ class ClaudeCodeGenerator:
         self.model = model
         self.effort = effort
         self.prices = MODELS[model]
+        self.prompt = prompt or load_prompt()
+        self.system = self.prompt.typed
         self.binary = binary
         self.cwd = cwd or Path(tempfile.mkdtemp(prefix="infra-docs-rag-claude-"))
 
@@ -273,7 +281,7 @@ class ClaudeCodeGenerator:
             self.binary,
             "-p",
             "--system-prompt",
-            SYSTEM_TYPED,
+            self.system,
             "--tools",
             "",
             "--max-turns",
@@ -338,7 +346,9 @@ class ClaudeCodeGenerator:
         )
 
 
-def load_generator(name: str = DEFAULT_MODEL, effort: str = DEFAULT_EFFORT) -> Generator:
+def load_generator(
+    name: str = DEFAULT_MODEL, effort: str = DEFAULT_EFFORT, prompt: str = DEFAULT_PROMPT
+) -> Generator:
     if name == "claude-code":
-        return ClaudeCodeGenerator(effort=effort)
-    return ClaudeGenerator(name, effort)
+        return ClaudeCodeGenerator(effort=effort, prompt=load_prompt(prompt))
+    return ClaudeGenerator(name, effort, load_prompt(prompt))

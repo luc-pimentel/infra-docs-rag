@@ -103,6 +103,11 @@ class Index:
 
     @classmethod
     def load(cls, directory: Path) -> "Index":
+        """From a directory holding the index's files, or from a versioned store (`data/index/<model>/`)
+        whose `current` file names the version directory to read."""
+        pointer = directory / "current"
+        if not (directory / "manifest.json").exists() and pointer.exists():
+            directory = directory / pointer.read_text().strip()
         if not (directory / "manifest.json").exists():
             raise FileNotFoundError(f"no index in {directory}; run `infra-docs-rag embed` first")
         manifest = Manifest.model_validate_json((directory / "manifest.json").read_text())
