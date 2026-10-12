@@ -78,6 +78,7 @@ class Generated:
     ms: float
     refusal: str | None = None  # the safety classifier's category when stop_reason is refusal
     unverified: int = 0  # citations the model typed that did not check out against a passage
+    cached: bool = False  # answered from the generation cache: no call was made
 
     @property
     def text(self) -> str:

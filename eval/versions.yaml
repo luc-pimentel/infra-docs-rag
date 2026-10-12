@@ -30,3 +30,17 @@ versions:
       rerank:
         model: bge-base
         candidates: 20
+
+  - name: v3-budget
+    description: v2 with the passages capped at 1,200 tokens in rank order; the stage 11 cut that costs no right passage
+    retrieval:
+      k: 5
+      min_score: 0.5
+      mode: hybrid
+      budget: 1200
+      fusion:
+        strategy: weighted
+        alpha: 0.5
+      rerank:
+        model: bge-base
+        candidates: 20
