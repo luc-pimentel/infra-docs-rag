@@ -1,5 +1,6 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
-evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank`, run from the repo root."""
+evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding`,
+run from the repo root."""
 
 import argparse
 import re
@@ -14,6 +15,14 @@ from .embed.evaluate import evaluate, load_queries
 from .embed.index import Index, ModelMismatch, build
 from .embed.report import format_search
 from .embed.report import write_report as write_embeddings_report
+from .generate.answer import answer as grounded_answer
+from .generate.answer import format_answer
+from .generate.evaluate import evaluate_grounding, load_grounding
+from .generate.generator import DEFAULT_EFFORT, GENERATORS, load_generator
+from .generate.generator import DEFAULT_MODEL as DEFAULT_GENERATOR
+from .generate.judge import load_judge
+from .generate.prompt import SYSTEM, SYSTEM_TYPED, render
+from .generate.report import write_report as write_grounding_report
 from .ingest.models import Document
 from .ingest.pipeline import run
 from .ingest.report import write_report
@@ -45,6 +54,8 @@ HYBRID_QUERIES = Path("eval/hybrid.yaml")
 HYBRID_REPORT = Path("reports/hybrid-search.md")
 RERANK_EXPECTATIONS = Path("eval/rerank.yaml")
 RERANK_REPORT = Path("reports/reranking.md")
+GROUNDING_QUESTIONS = Path("eval/grounding.yaml")
+GROUNDING_REPORT = Path("reports/grounding.md")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -118,6 +129,18 @@ def retrieve(query: str, model: str, retrieval: Retrieval) -> None:
     print(format_context(r.index.manifest, r.retrieve(query, retrieval)))
 
 
+def answer(
+    query: str, model: str, retrieval: Retrieval, generator: str, effort: str, show_prompt: bool
+) -> None:
+    """A grounded answer, or the prompt that would produce one."""
+    r = retriever(model, retrieval)
+    if show_prompt:
+        system = SYSTEM_TYPED if generator == "claude-code" else SYSTEM
+        print(render(r.retrieve(query, retrieval), query, system))
+        return
+    print(format_answer(grounded_answer(query, r, load_generator(generator, effort), retrieval)))
+
+
 def retrieval_from(args: argparse.Namespace) -> Retrieval:
     criteria = Filter(project=args.project, source=args.source, section=args.section, page=args.page)
     min_score = args.min_score
@@ -167,12 +190,34 @@ def main(argv: list[str] | None = None) -> None:
     retrieve_cmd = commands.add_parser(
         "retrieve", help="print the passages a generator would read for a query, numbered and cited"
     )
+    answer_cmd = commands.add_parser(
+        "answer",
+        help="answer a question from the retrieved passages, every statement cited, or say the docs do not cover it",
+    )
+    answer_cmd.add_argument(
+        "--generator",
+        choices=list(GENERATORS),
+        default=DEFAULT_GENERATOR,
+        help="; ".join(f"{name}: {how}" for name, how in GENERATORS.items())
+        + f" (default {DEFAULT_GENERATOR})",
+    )
+    answer_cmd.add_argument(
+        "--effort",
+        choices=["low", "medium", "high", "xhigh", "max"],
+        default=DEFAULT_EFFORT,
+        help=f"how hard the model thinks (default {DEFAULT_EFFORT})",
+    )
+    answer_cmd.add_argument(
+        "--show-prompt",
+        action="store_true",
+        help="print the request the model would get instead of calling it",
+    )
     threshold = (
         f"default {DEFAULT_RETRIEVAL.min_score:.2f}"
         if DEFAULT_RETRIEVAL.min_score is not None
         else "default none"
     )
-    for cmd in (search_cmd, retrieve_cmd):
+    for cmd in (search_cmd, retrieve_cmd, answer_cmd):
         cmd.add_argument("query")
         cmd.add_argument(
             "-k",
@@ -255,7 +300,7 @@ def main(argv: list[str] | None = None) -> None:
             help="rank every chunk first, then drop what the filter rejects",
         )
     retrieve_cmd.add_argument("--budget", type=int, help="most tokens the passages may add up to")
-    for cmd in (chunk_cmd, embed_cmd, search_cmd, retrieve_cmd):
+    for cmd in (chunk_cmd, embed_cmd, search_cmd, retrieve_cmd, answer_cmd):
         cmd.add_argument("--model", choices=MODELS, default=DEFAULT_MODEL, help=f"default {DEFAULT_MODEL}")
     commands.add_parser("evaluate", help="probe and compare every model, write reports/embeddings.md")
     commands.add_parser(
@@ -272,6 +317,24 @@ def main(argv: list[str] | None = None) -> None:
     commands.add_parser(
         "evaluate-rerank",
         help="rerank the first stage's candidates with each cross-encoder, write reports/reranking.md",
+    )
+    grounding_cmd = commands.add_parser(
+        "evaluate-grounding",
+        help="answer every labelled and adversarial question end to end, write reports/grounding.md",
+    )
+    grounding_cmd.add_argument(
+        "--generator",
+        choices=list(GENERATORS),
+        default=DEFAULT_GENERATOR,
+        help="; ".join(f"{name}: {how}" for name, how in GENERATORS.items())
+        + f" (default {DEFAULT_GENERATOR})",
+    )
+    grounding_cmd.add_argument("--effort", default=DEFAULT_EFFORT, help=f"default {DEFAULT_EFFORT}")
+    grounding_cmd.add_argument("--limit", type=int, help="only the first N questions, to try the run cheaply")
+    grounding_cmd.add_argument(
+        "--no-judge",
+        action="store_true",
+        help="skip the jev reading of each answer (grounded, fabricated, gap named)",
     )
     args = parser.parse_args(argv)
 
@@ -301,6 +364,10 @@ def main(argv: list[str] | None = None) -> None:
             search(args.query, args.model, retrieval_from(args))
         elif args.command == "retrieve":
             retrieve(args.query, args.model, retrieval_from(args))
+        elif args.command == "answer":
+            answer(
+                args.query, args.model, retrieval_from(args), args.generator, args.effort, args.show_prompt
+            )
         elif args.command == "evaluate":
             evaluation = evaluate(load_documents(DOCUMENTS), load_queries(QUERIES), list(MODELS))
             write_embeddings_report(evaluation, EMBEDDINGS_REPORT)
@@ -346,5 +413,23 @@ def main(argv: list[str] | None = None) -> None:
             )
             write_rerank_report(result, RERANK_REPORT)
             print(f"wrote {RERANK_REPORT}")
+        elif args.command == "evaluate-grounding":
+            bench, extra = load_all(BENCHMARK, HYBRID_QUERIES)
+            adversarial = load_grounding(GROUNDING_QUESTIONS, {q.id for q in [*bench.queries, *extra]})
+            second = DEFAULT_RETRIEVAL.rerank
+            grounding = evaluate_grounding(
+                Index.load(INDEX_DIR / DEFAULT_MODEL),
+                load_embedder(DEFAULT_MODEL),
+                load_documents(DOCUMENTS),
+                bench,
+                extra,
+                adversarial,
+                load_generator(args.generator, args.effort),
+                load_reranker(second.model) if second is not None else None,
+                limit=args.limit,
+                judge=None if args.no_judge else load_judge(),
+            )
+            write_grounding_report(grounding, GROUNDING_REPORT)
+            print(f"wrote {GROUNDING_REPORT}")
     except (FileNotFoundError, ModelMismatch, ValueError) as error:
         parser.exit(1, f"error: {error}\n")

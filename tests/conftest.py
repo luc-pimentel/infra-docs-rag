@@ -130,3 +130,49 @@ class FakeReranker:
 @pytest.fixture
 def fake_reranker():
     return FakeReranker
+
+
+class FakeGenerator:
+    """A stand-in for the language model: answers come from a script keyed by question, as a list of
+    (text, [passage numbers]) segments; a question with no script gets the abstention sentence. No
+    network, same output every run."""
+
+    def __init__(self, script=None, stop_reason="end_turn", refusal=None):
+        from infra_docs_rag.generate.generator import Cited, Generated, Segment, Usage
+        from infra_docs_rag.generate.prompt import ABSTAIN
+
+        self.name = "fake"
+        self.model = "fake-model"
+        self.prices = {"input": 1.0, "output": 2.0, "cache_read": 0.1}
+        self.script = script or {}
+        self.stop_reason = stop_reason
+        self.refusal = refusal
+        self.calls = []
+        self._types = (Cited, Generated, Segment, Usage, ABSTAIN)
+
+    def generate(self, context, question):
+        Cited, Generated, Segment, Usage, ABSTAIN = self._types
+        self.calls.append((question, [s.chunk.chunk_id for s in context.sources]))
+        lines = self.script.get(question, [(ABSTAIN, [])])
+        segments = [
+            Segment(
+                text=text,
+                citations=[
+                    Cited(document=n, cited_text=context.sources[n - 1].chunk.text[:20]) for n in numbers
+                ],
+            )
+            for text, numbers in lines
+        ]
+        return Generated(
+            segments=segments,
+            stop_reason=self.stop_reason,
+            model=self.model,
+            usage=Usage(input_tokens=100, output_tokens=10, cache_read_tokens=0),
+            ms=1.0,
+            refusal=self.refusal,
+        )
+
+
+@pytest.fixture
+def fake_generator():
+    return FakeGenerator
