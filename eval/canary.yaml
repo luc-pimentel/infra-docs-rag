@@ -1,0 +1,36 @@
+# The canary: five questions `infra-docs-rag pipeline canary` answers under the released pipeline after
+# a deploy (or under a candidate before one), each with what has to happen. They are questions that held
+# under every version so far, so a canary failure is the deployment, not the question. `expect: answer`
+# needs an answer that cites the named source; `expect: abstain` needs the abstention sentence or no
+# passage at all. Each run writes its traces to the trace log under version `canary:<version>`.
+questions:
+  - id: canary-rollback
+    text: How do I undo a bad release?
+    expect: answer
+    source: k8s-deployment-md
+    why: a paraphrase, the README's own example, answered by the deployment page
+
+  - id: canary-keep-firing
+    text: keep_firing_for
+    expect: answer
+    source: prom-alerting-rules-md
+    why: an identifier the lexical side has to carry; a hybrid pipeline that lost BM25 fails here
+
+  - id: canary-headless
+    text: How do I get a Service with no cluster IP and no load balancing in front of the pods?
+    expect: answer
+    source: k8s-service
+    why: a paraphrase answered by one section of the Service page
+
+  - id: canary-ransomware
+    text: What are the steps in handling a ransomware incident?
+    expect: answer
+    source: cncf-security-whitepaper
+    why: a paraphrase answered by the PDF, so the OCR-free PDF path and its page metadata are exercised.
+      The first canary run used the page-9 question here; it abstained once in three runs under the same
+      pipeline, a model judgement call, so it is not a canary (see reports/observability.md)
+
+  - id: canary-out-of-scope
+    text: What is a good recipe for sourdough bread?
+    expect: abstain
+    why: nothing in the corpus; the cosine floor has to return no passage without a model call

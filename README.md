@@ -57,7 +57,11 @@ Each stage ships into this repo, so the service grows with the checklist.
   every result carrying the version of the prompt, chunking, embedding model, index and retrieval that
   produced it; indexes built next to the live one and switched when they pass their checks; releases
   that clear the gates, and a rollback ([contracts](docs/pipeline.md), [report](reports/orchestration.md))
-- [ ] 10 · System design and observability
+- [x] 10 · System design and observability: the service's components, storage layers, deployment
+  boundaries and freshness flows as a design doc with a failure-mode and deploy-control table; one trace
+  per question with every stage's input, output and time; a summary over the trace log; a canary that
+  asks the released pipeline five known questions; health checks ([design](docs/design.md),
+  [report](reports/observability.md))
 - [ ] 11 · Latency and cost optimization
 - [ ] 12 · Capstone: FastAPI service, eval report across three versions, design doc, demo and a
   postmortem
@@ -288,6 +292,30 @@ failure, a retry, a re-index, a refused release, a rollback.
   it current; a critical failure refuses it. `pipeline rollback` makes the previous release current and
   points the index at its version. `answer` runs the current release unless told otherwise.
 
+## Observability
+
+Every question through `answer`, the canary or a benchmark run leaves one trace in
+`data/traces/traces.jsonl`: the question, the pipeline version and its lineage, every stage's time (embed,
+dense, lexical, fuse, rerank, pack, generate, judge), what the first stage ranked with its scores, what the
+model read after the reranker and where each passage stood before, the answer with its citations, the
+cited and claim shares, tokens and cost, the judge's reading, and what fell back, if anything.
+[`docs/design.md`](docs/design.md) is the system around the stages: components, interfaces, storage,
+deployment boundaries, freshness flows, and the failure modes with their detection, fallback and deploy
+control. [`reports/observability.md`](reports/observability.md) has four traces in full and the log
+summarized.
+
+- **Traces:** `answer --trace` prints the trace instead of the answer; `--judge` adds the judge's reading.
+  `traces --summary` is the operator's view of the log (outcome rates, stage p50 and p95, grounding, cost,
+  degraded and error counts, which versions answered) with flags when a rate crosses a line; `--last N`
+  and `--id` print traces; `--report` writes the report.
+- **Fallbacks:** a reranker that fails leaves the first-stage order in place and marks the trace
+  degraded; a model call that fails inside a benchmark or the canary is retried once and then one case
+  with outcome `error`; a judge that fails leaves the case without a reading.
+- **Canary:** `pipeline canary` asks the released pipeline the five questions in
+  [`eval/canary.yaml`](eval/canary.yaml), each with the outcome and source it has to produce, and exits 1
+  when one fails. **Health:** `pipeline health` checks the index, the release, freshness, the model path,
+  the judge and the recent traces, and exits 1 when one fails.
+
 ## Run it
 
 Needs [uv](https://docs.astral.sh/uv/), plus Tesseract for scanned PDFs (`brew install tesseract`).
@@ -323,17 +351,22 @@ uv run infra-docs-rag pipeline status                            # where each st
 uv run infra-docs-rag pipeline index --use 3971d9f1e10e          # point bge-small at an index version; --list, --remove
 uv run infra-docs-rag pipeline release --candidate v2-hybrid-rerank-claude-code   # promote a run's pipeline past the gates; exit 1 when refused
 uv run infra-docs-rag pipeline rollback                          # the previous release again
+uv run infra-docs-rag answer "What does keep_firing_for do?" --generator claude-code --trace --judge   # the trace instead of the answer
+uv run infra-docs-rag traces                                     # the trace log summarized; --last 3, --id <id>, --report
+uv run infra-docs-rag pipeline canary                            # five known questions against the release; exit 1 on a failure
+uv run infra-docs-rag pipeline health                            # index, release, freshness, model path, judge, recent traces
 uv run pytest
 ```
 
 Downloads go to `data/raw/`, records to `data/processed/documents.jsonl`, chunks to `data/chunks/`,
-indexes to `data/index/<model>/<version>/`, the orchestrator's state to `data/pipeline/state.json`, and
-the evidence to [`reports/ingestion.md`](reports/ingestion.md),
+indexes to `data/index/<model>/<version>/`, the orchestrator's state to `data/pipeline/state.json`, traces
+to `data/traces/traces.jsonl`, and the evidence to [`reports/ingestion.md`](reports/ingestion.md),
 [`reports/chunking.md`](reports/chunking.md), [`reports/embeddings.md`](reports/embeddings.md),
 [`reports/retrieval.md`](reports/retrieval.md), [`reports/hybrid-search.md`](reports/hybrid-search.md),
 [`reports/reranking.md`](reports/reranking.md), [`reports/grounding.md`](reports/grounding.md),
 [`reports/calibration.md`](reports/calibration.md), [`reports/evaluation.md`](reports/evaluation.md) and
-[`reports/orchestration.md`](reports/orchestration.md); saved benchmark runs go to `eval/runs/` and
+[`reports/orchestration.md`](reports/orchestration.md) and [`reports/observability.md`](reports/observability.md);
+saved benchmark runs go to `eval/runs/` and
 releases to `eval/releases.yaml`, both committed.
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
 needs all three, about 660 MB). The first `retrieve` or `search` downloads the default reranker

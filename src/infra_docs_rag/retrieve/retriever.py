@@ -18,7 +18,9 @@ reorders them by relevance; the cosine floor still reads the first-stage hit und
 `min_relevance` floor reads the reranker's score.
 """
 
-from dataclasses import dataclass
+import logging
+import time
+from dataclasses import dataclass, field
 from typing import Literal
 
 import numpy as np
@@ -33,6 +35,7 @@ from .rerank import DEFAULT_RERANKER, RERANKERS, Reranked, RerankedHit, Reranker
 
 Mode = Literal["dense", "lexical", "hybrid"]
 MODES: tuple[Mode, ...] = ("dense", "lexical", "hybrid")
+log = logging.getLogger("infra_docs_rag.retrieve")
 
 
 class Filter(BaseModel):
@@ -177,6 +180,15 @@ class Context:
     below: int  # hits dropped for scoring under min_score, or under the rerank's min_relevance
     over_budget: int  # hits left out because the budget was spent
     top_relevance: float | None = None  # the best hit's reranker score, when there was a rerank
+    timings: dict[str, float] = field(
+        default_factory=dict
+    )  # ms per stage: embed, dense, lexical, fuse, rerank, pack
+    first_stage: list[Hit] = field(
+        default_factory=list
+    )  # the candidates in first-stage order, before any rerank
+    degraded: str | None = (
+        None  # what fell back and why, when a stage failed and the next best thing was used
+    )
 
     @property
     def text(self) -> str:
@@ -217,9 +229,16 @@ class Retriever:
         self.lexical = Lexical.build(index.chunks)
         self.reranker = reranker
         self.last_rerank: Reranked | None = None  # what the last reranked ranking cost; for the benchmarks
+        self.timings: dict[str, float] = {}  # of the retrieval in progress; attached to its Context
+        self.first_stage_hits: list[Hit] = []
+        self.degraded: str | None = None
 
     def retrieve(self, query: str, retrieval: Retrieval = DEFAULT_RETRIEVAL) -> Context:
-        return self.pack(query, self.embedder.embed_queries([query])[0], retrieval)
+        self.timings, self.first_stage_hits, self.degraded = {}, [], None
+        started = time.perf_counter()
+        vector = self.embedder.embed_queries([query])[0]
+        self.timings["embed"] = (time.perf_counter() - started) * 1000
+        return self.pack(query, vector, retrieval)
 
     def ranking(
         self, query: str, vector: np.ndarray, retrieval: Retrieval, k: int, within: np.ndarray | None = None
@@ -227,7 +246,9 @@ class Retriever:
         """The top k under the retrieval's mode, among the chunks `within` marks (every chunk when None).
         With a rerank, the first stage's top `candidates` reordered by the reranker, at most k of them."""
         if retrieval.rerank is None:
-            return self.first_stage(query, vector, retrieval, k, within)
+            hits = self.first_stage(query, vector, retrieval, k, within)
+            self.first_stage_hits = list(hits)
+            return hits
         if self.reranker is None:
             raise ValueError(f"the retrieval asks for `{retrieval.rerank.label}` but no reranker is loaded")
         if self.reranker.name != retrieval.rerank.model:
@@ -235,21 +256,41 @@ class Retriever:
                 f"the retrieval asks for reranker {retrieval.rerank.model!r} but {self.reranker.name!r} is loaded"
             )
         candidates = self.first_stage(query, vector, retrieval, retrieval.rerank.candidates, within)
-        self.last_rerank = rerank(query, candidates, self.reranker, k)
+        self.first_stage_hits = list(candidates)
+        started = time.perf_counter()
+        try:
+            self.last_rerank = rerank(query, candidates, self.reranker, k)
+        except Exception as error:  # noqa: BLE001  the reranker is a refinement: without it, the first stage stands
+            self.degraded = f"reranker {self.reranker.name} failed ({type(error).__name__}: {str(error)[:120]}); first-stage order used"
+            log.warning(self.degraded)
+            self.timings["rerank"] = (time.perf_counter() - started) * 1000
+            return candidates[:k]
+        self.timings["rerank"] = (time.perf_counter() - started) * 1000
         return list(self.last_rerank.hits)
 
     def first_stage(
         self, query: str, vector: np.ndarray, retrieval: Retrieval, k: int, within: np.ndarray | None = None
     ) -> list[Hit]:
         """The top k under the retrieval's mode, before any reranking."""
+        started = time.perf_counter()
         if retrieval.mode == "dense":
-            return self.index.rank(vector, k, within)
+            hits = self.index.rank(vector, k, within)
+            self.timings["dense"] = (time.perf_counter() - started) * 1000
+            return hits
         if retrieval.mode == "lexical":
-            return self.lexical.rank(query, k, within)
+            hits = self.lexical.rank(query, k, within)
+            self.timings["lexical"] = (time.perf_counter() - started) * 1000
+            return hits
         everything = len(self.index.chunks)
         dense = self.index.rank(vector, everything, within)
+        self.timings["dense"] = (time.perf_counter() - started) * 1000
+        started = time.perf_counter()
         lexical = self.lexical.rank(query, everything, within)
-        return fuse(dense, lexical, retrieval.fusion, k)
+        self.timings["lexical"] = (time.perf_counter() - started) * 1000
+        started = time.perf_counter()
+        fused = fuse(dense, lexical, retrieval.fusion, k)
+        self.timings["fuse"] = (time.perf_counter() - started) * 1000
+        return fused
 
     def hits(self, query: str, vector: np.ndarray, retrieval: Retrieval) -> tuple[list[Hit], int]:
         """The ranked hits that pass the filter, at most k of them, and how many chunks were eligible."""
@@ -266,6 +307,7 @@ class Retriever:
         """Rank, drop what scores under the threshold, and pack what is left up to the budget. The first
         passage always goes in: a generator with nothing to read has nothing to cite."""
         hits, candidates = self.hits(query, vector, retrieval)
+        started = time.perf_counter()
         floor = retrieval.min_score
         kept = [h for h in hits if floor is None or gate(h) >= floor]
         if retrieval.rerank is not None and retrieval.rerank.min_relevance is not None:
@@ -278,6 +320,7 @@ class Retriever:
                 break
             sources.append(Source(len(sources) + 1, hit, count))
             spent += count
+        self.timings["pack"] = (time.perf_counter() - started) * 1000
         return Context(
             query=query,
             retrieval=retrieval,
@@ -287,4 +330,7 @@ class Retriever:
             top_relevance=relevance(hits[0]) if hits else None,
             below=len(hits) - len(kept),
             over_budget=len(kept) - len(sources),
+            timings=dict(self.timings),
+            first_stage=list(self.first_stage_hits),
+            degraded=self.degraded,
         )
