@@ -1,6 +1,7 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | evaluate-pipeline`, run from the repo root."""
+calibrate | evaluate-pipeline | pipeline run | pipeline status | pipeline index | pipeline release | pipeline rollback`,
+run from the repo root."""
 
 import argparse
 import re
@@ -14,7 +15,7 @@ from .chunk.report import format_chunks, format_shapes
 from .chunk.report import write_report as write_chunking_report
 from .embed.embedders import DEFAULT_MODEL, MODELS, load_embedder
 from .embed.evaluate import evaluate, load_queries
-from .embed.index import Index, ModelMismatch, build
+from .embed.index import Index, ModelMismatch
 from .embed.report import format_search
 from .embed.report import write_report as write_embeddings_report
 from .evaluation.calibrate import calibrate
@@ -25,19 +26,24 @@ from .evaluation.labels import LABELS, load_labels
 from .evaluation.metrics import metrics
 from .evaluation.report import write_report as write_evaluation_report
 from .evaluation.runs import RUNS_DIR, Run, from_grounding
-from .evaluation.versions import DEFAULT_VERSION, load_versions, pick
+from .evaluation.versions import DEFAULT_VERSION, Version
 from .generate.answer import answer as grounded_answer
 from .generate.answer import format_answer
 from .generate.evaluate import evaluate_grounding, load_grounding
 from .generate.generator import DEFAULT_EFFORT, GENERATORS, load_generator
 from .generate.generator import DEFAULT_MODEL as DEFAULT_GENERATOR
 from .generate.judge import load_judge
-from .generate.prompt import SYSTEM, SYSTEM_TYPED, render
+from .generate.prompt import render
+from .generate.prompts import DEFAULT_PROMPT, PROMPTS, load_prompt
 from .generate.report import write_report as write_grounding_report
 from .ingest.models import Document
 from .ingest.pipeline import run
 from .ingest.report import write_report
 from .ingest.sources import fetch, load_sources
+from .pipeline import commands as pipeline_commands
+from .pipeline.releases import RELEASES
+from .pipeline.stages import Evaluation, Paths
+from .pipeline.store import Store
 from .retrieve.compare import compare, load_all
 from .retrieve.evaluate import evaluate_retrieval, load_benchmark
 from .retrieve.fusion import STRATEGIES as FUSIONS
@@ -104,15 +110,19 @@ def chunk(chunkings: list[Chunking], model: str, source: str, samples: int) -> N
 
 
 def embed(model: str) -> None:
+    """Build the index into a staging directory, check it, and make it the current version of its model
+    (see pipeline/store.py); the previous version stays on disk."""
     docs = load_documents(DOCUMENTS)
     embedder = load_embedder(model)
     chunks = chunk_documents(docs, DEFAULT_CHUNKING, embedder, load_projects())
-    index = build(embedder, chunks, docs[0].provenance.ingest_version, DEFAULT_CHUNKING)
-    index.save(INDEX_DIR / model)
+    version, index, new = Store(INDEX_DIR / model).publish(
+        embedder, chunks, docs[0].provenance.ingest_version, DEFAULT_CHUNKING
+    )
     m = index.manifest
     print(
         f"embedded {m.chunks} chunks ({m.chunking.label}) with {m.model_id} ({m.dimensions} dimensions) "
-        f"in {m.build_seconds:.1f}s into {INDEX_DIR / model}/"
+        f"in {m.build_seconds:.1f}s into {INDEX_DIR / model}/{version}/"
+        + (", now current" if new else "; the same index was already there, now current")
     )
     if m.truncated:
         print(
@@ -120,14 +130,30 @@ def embed(model: str) -> None:
         )
 
 
-def retriever(model: str, retrieval: Retrieval) -> Retriever:
+def retriever(version: Version, pinned: str | None) -> tuple[Retriever, Index, str]:
+    """The retriever a version runs: its embedding model's index (the pinned version when it is on disk),
+    and the reranker its retrieval asks for."""
+    retrieval = version.retrieval
+    index, index_id = pipeline_commands.index_for(version, pinned, INDEX_DIR)
     reranker = load_reranker(retrieval.rerank.model) if retrieval.rerank is not None else None
-    return Retriever(Index.load(INDEX_DIR / model), load_embedder(model), reranker)
+    return Retriever(index, load_embedder(version.embedding), reranker), index, index_id
 
 
-def search(query: str, model: str, retrieval: Retrieval) -> None:
+def resolve(args: argparse.Namespace) -> tuple[Version, str | None]:
+    """The version `search`, `retrieve` and `answer` run: --version, else the release when the flags are
+    the defaults, else the flags (see pipeline/commands.py). `--model` picks the index when no version does."""
+    version, pinned = pipeline_commands.resolve_version(args.version, retrieval_from(args), RELEASES)
+    if args.version is None and version.name == DEFAULT_VERSION and args.model != DEFAULT_MODEL:
+        version = version.model_copy(update={"embedding": args.model})
+    if getattr(args, "prompt", None):
+        version = version.model_copy(update={"prompt": args.prompt})
+    return version, pinned
+
+
+def search(query: str, version: Version, pinned: str | None) -> None:
     """Every hit the retrieval would rank, scores included; the ones under the threshold say so."""
-    r = retriever(model, retrieval)
+    retrieval = version.retrieval
+    r, _, _ = retriever(version, pinned)
     context = r.retrieve(query, retrieval.model_copy(update={"min_score": None, "budget": None}))
     hits = [s.hit for s in context.sources]
     if retrieval.mode == "dense":
@@ -136,22 +162,93 @@ def search(query: str, model: str, retrieval: Retrieval) -> None:
         print(format_hybrid_search(r.index.manifest, hits, retrieval.label))
 
 
-def retrieve(query: str, model: str, retrieval: Retrieval) -> None:
+def retrieve(query: str, version: Version, pinned: str | None) -> None:
     """The passages a generator would read, numbered and cited."""
-    r = retriever(model, retrieval)
-    print(format_context(r.index.manifest, r.retrieve(query, retrieval)))
+    r, _, _ = retriever(version, pinned)
+    print(format_context(r.index.manifest, r.retrieve(query, version.retrieval)))
 
 
 def answer(
-    query: str, model: str, retrieval: Retrieval, generator: str, effort: str, show_prompt: bool
+    query: str, version: Version, pinned: str | None, generator: str, effort: str, show_prompt: bool
 ) -> None:
-    """A grounded answer, or the prompt that would produce one."""
-    r = retriever(model, retrieval)
+    """A grounded answer, or the prompt that would produce one, under a pipeline version."""
+    r, _, index_id = retriever(version, pinned)
+    prompt = load_prompt(version.prompt)
+    retrieval = version.retrieval
     if show_prompt:
-        system = SYSTEM_TYPED if generator == "claude-code" else SYSTEM
-        print(render(r.retrieve(query, retrieval), query, system))
+        print(
+            f"[version {version.name} · index {version.embedding}/{index_id} · prompt {prompt.version(generator)}]"
+        )
+        print(render(r.retrieve(query, retrieval), query, prompt.text(generator)))
         return
-    print(format_answer(grounded_answer(query, r, load_generator(generator, effort), retrieval)))
+    print(
+        format_answer(grounded_answer(query, r, load_generator(generator, effort, version.prompt), retrieval))
+    )
+
+
+def run_benchmark(
+    version: Version,
+    pinned: str | None,
+    generator: str,
+    effort: str,
+    limit: int | None,
+    judge: bool,
+    name: str,
+):
+    """The grounding benchmark under a pipeline version, and the run to save, lineage included."""
+    bench, extra = load_all(BENCHMARK, HYBRID_QUERIES)
+    adversarial = load_grounding(GROUNDING_QUESTIONS, {q.id for q in [*bench.queries, *extra]})
+    second = version.retrieval.rerank
+    index, index_id = pipeline_commands.index_for(version, pinned, INDEX_DIR)
+    gen = load_generator(generator, effort, version.prompt)
+    grounding = evaluate_grounding(
+        index,
+        load_embedder(version.embedding),
+        load_documents(DOCUMENTS),
+        bench,
+        extra,
+        adversarial,
+        gen,
+        load_reranker(second.model) if second is not None else None,
+        retrieval=version.retrieval,
+        limit=limit,
+        judge=load_judge() if judge else None,
+    )
+    lineage = pipeline_commands.lineage(
+        version, index, index_id, load_prompt(version.prompt), gen.name, grounding.generator
+    )
+    return grounding, from_grounding(grounding, name, version.name, version.description, lineage)
+
+
+def evaluation_for(args: argparse.Namespace, paths: Paths) -> Evaluation:
+    """The evaluate and gate stages of `pipeline run`: the benchmark under --version, saved as a run,
+    then compared to the current release's run."""
+    from .pipeline.releases import Releases
+    from .pipeline.stages import StageFailed
+
+    version, pinned = pipeline_commands.resolve_version(args.version)
+    effort = args.effort or DEFAULT_EFFORT
+    name = args.save or f"{version.name}-{args.generator}"
+    prompt = load_prompt(version.prompt)
+
+    def produce(directory: Path) -> None:
+        _, saved = run_benchmark(version, pinned, args.generator, effort, args.limit, not args.no_judge, name)
+        saved.save(directory)
+
+    def gate(directory: Path) -> str:
+        releases = Releases.load(paths.releases)
+        if releases.live is None:
+            return "no release to compare against; `pipeline release --candidate` makes the first"
+        comparison = compare_runs(Run.load(RUNS_DIR / releases.live.run), Run.load(directory), load_gates())
+        write_evaluation_report(comparison, EVALUATION_REPORT)
+        if comparison.blocked:
+            raise StageFailed(
+                "gate", f"{comparison.verdict} against {releases.live.name}; see {EVALUATION_REPORT}"
+            )
+        return f"{comparison.verdict} against {releases.live.name}; wrote {EVALUATION_REPORT}"
+
+    stage_version = f"{version.name}|{version.retrieval.model_dump_json()}|{prompt.version(args.generator)}|{args.generator}|{effort}|{args.limit}|{not args.no_judge}"
+    return Evaluation(run_name=name, version=stage_version, produce=produce, gate=gate)
 
 
 def retrieval_from(args: argparse.Namespace) -> Retrieval:
@@ -225,6 +322,11 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="print the request the model would get instead of calling it",
     )
+    answer_cmd.add_argument(
+        "--prompt",
+        choices=list(PROMPTS),
+        help=f"the system prompt, by name in the registry (default the version's, {DEFAULT_PROMPT})",
+    )
     threshold = (
         f"default {DEFAULT_RETRIEVAL.min_score:.2f}"
         if DEFAULT_RETRIEVAL.min_score is not None
@@ -232,6 +334,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     for cmd in (search_cmd, retrieve_cmd, answer_cmd):
         cmd.add_argument("query")
+        cmd.add_argument(
+            "--version",
+            help="the pipeline version to run, from eval/versions.yaml, or `release` for the current release's "
+            "(default: the release's when there is one and no retrieval flag is given, else the flags)",
+        )
         cmd.add_argument(
             "-k",
             type=int,
@@ -382,6 +489,7 @@ def main(argv: list[str] | None = None) -> None:
         "--list-metrics", action="store_true", help="print every metric a gate can name"
     )
     pipeline_cmd.add_argument("--list-runs", action="store_true", help="print the saved runs")
+    pipeline_commands.add_pipeline_commands(commands)
     args = parser.parse_args(argv)
 
     try:
@@ -407,13 +515,11 @@ def main(argv: list[str] | None = None) -> None:
         elif args.command == "embed":
             embed(args.model)
         elif args.command == "search":
-            search(args.query, args.model, retrieval_from(args))
+            search(args.query, *resolve(args))
         elif args.command == "retrieve":
-            retrieve(args.query, args.model, retrieval_from(args))
+            retrieve(args.query, *resolve(args))
         elif args.command == "answer":
-            answer(
-                args.query, args.model, retrieval_from(args), args.generator, args.effort, args.show_prompt
-            )
+            answer(args.query, *resolve(args), args.generator, args.effort, args.show_prompt)
         elif args.command == "evaluate":
             evaluation = evaluate(load_documents(DOCUMENTS), load_queries(QUERIES), list(MODELS))
             write_embeddings_report(evaluation, EMBEDDINGS_REPORT)
@@ -460,30 +566,28 @@ def main(argv: list[str] | None = None) -> None:
             write_rerank_report(result, RERANK_REPORT)
             print(f"wrote {RERANK_REPORT}")
         elif args.command == "evaluate-grounding":
-            bench, extra = load_all(BENCHMARK, HYBRID_QUERIES)
-            adversarial = load_grounding(GROUNDING_QUESTIONS, {q.id for q in [*bench.queries, *extra]})
-            version = pick(load_versions(), args.version)
-            second = version.retrieval.rerank
-            grounding = evaluate_grounding(
-                Index.load(INDEX_DIR / DEFAULT_MODEL),
-                load_embedder(DEFAULT_MODEL),
-                load_documents(DOCUMENTS),
-                bench,
-                extra,
-                adversarial,
-                load_generator(args.generator, args.effort),
-                load_reranker(second.model) if second is not None else None,
-                retrieval=version.retrieval,
-                limit=args.limit,
-                judge=None if args.no_judge else load_judge(),
-            )
-            saved = from_grounding(
-                grounding, args.save or f"{version.name}-{args.generator}", version.name, version.description
+            version, pinned = pipeline_commands.resolve_version(args.version)
+            name = args.save or f"{version.name}-{args.generator}"
+            grounding, saved = run_benchmark(
+                version, pinned, args.generator, args.effort, args.limit, not args.no_judge, name
             )
             print(f"saved the run to {saved.save(RUNS_DIR / saved.name)}/")
             if not args.no_report:
                 write_grounding_report(grounding, GROUNDING_REPORT)
                 print(f"wrote {GROUNDING_REPORT}")
+        elif args.command == "pipeline":
+            if args.pipeline_command == "run":
+                if pipeline_commands.run_pipeline(args, DEFAULT_MODEL, DEFAULT_CHUNKING, evaluation_for):
+                    parser.exit(1)
+            elif args.pipeline_command == "status":
+                pipeline_commands.status(DEFAULT_MODEL, DEFAULT_CHUNKING, INDEX_DIR)
+            elif args.pipeline_command == "index":
+                pipeline_commands.manage_index(args, DEFAULT_MODEL, INDEX_DIR)
+            elif args.pipeline_command == "release":
+                if pipeline_commands.release(args, INDEX_DIR):
+                    parser.exit(1)
+            elif args.pipeline_command == "rollback":
+                pipeline_commands.roll_back(INDEX_DIR)
         elif args.command == "calibrate":
             labelled_run = args.run or (yaml.safe_load(args.labels.read_text()) or {}).get("run", "")
             if not labelled_run:

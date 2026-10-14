@@ -1,7 +1,10 @@
-# Pipeline versions `infra-docs-rag evaluate-grounding --version <name>` can run and `evaluate-pipeline`
-# can compare. Each names a retrieval configuration; the chunking, index, generator and prompt are the
-# same for every version and the saved run's manifest records them. `default` is always available and
-# means whatever `retrieve` and `answer` do with no flags.
+# Pipeline versions `infra-docs-rag evaluate-grounding --version <name>` can run, `evaluate-pipeline`
+# can compare, `answer --version <name>` can answer under, and `pipeline release` can promote. Each names
+# a retrieval configuration and may name a `prompt` (from the registry in generate/prompts.py, default
+# cite-v1), an `embedding` model whose index is read (default bge-small) and an `index` version under
+# data/index/<embedding>/ (default: the current one). The saved run's manifest records the lineage that
+# was actually read. `default` is always available and means whatever `retrieve` and `answer` do with
+# no flags.
 #
 # v1 is the pipeline as it stood after stage 04: the cosine ranking alone, no reranker. v2 adds stages
 # 05 and 06, hybrid fusion and the cross-encoder, and is what `default` currently resolves to. The

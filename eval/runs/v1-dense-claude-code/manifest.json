@@ -55,5 +55,19 @@
     "cache_read": 0.2
   },
   "judge": "jev-1.13.0",
-  "questions": 69
+  "questions": 69,
+  "lineage": {
+    "version": "v1-dense",
+    "ingest_version": "0.1.0+8e4b1a0",
+    "chunking_version": "section-aware-512-64-context+825a7940b716",
+    "embedding_version": "BAAI/bge-small-en-v1.5@5c38ec7c405e",
+    "index_version": "3971d9f1e10e",
+    "prompt_version": "cite-v1+e732a9f0cc40",
+    "retrieval_version": "v1-dense+97e3615c26c9",
+    "generator": "claude-opus-5-5",
+    "backend": "claude-code",
+    "eval_run_id": "v1-dense-claude-code",
+    "git_sha": "1b66515",
+    "created_at": "2026-10-12T16:33:54+00:00"
+  }
 }

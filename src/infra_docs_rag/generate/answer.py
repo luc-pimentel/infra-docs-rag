@@ -12,7 +12,7 @@ from ..retrieve.retriever import DEFAULT_RETRIEVAL, Context, Retrieval, Retrieve
 from .generator import Generated, Generator
 from .prompt import ABSTAIN
 
-Outcome = str  # "no-passage" | "abstained" | "answered" | "refused" | "cut-off"
+Outcome = str  # "no-passage" | "abstained" | "answered" | "refused" | "cut-off" | "error"
 
 # A sentence that names what the passages do not cover, or what the answer cannot say from them: the
 # prompt asks for it, it has nothing to cite, and it is not a claim about the subject.
@@ -48,6 +48,7 @@ class Answer:
     uncited: list[str] = field(default_factory=list)  # answer segments with no citation, whitespace aside
     generated: Generated | None = None
     retrieve_ms: float = 0.0  # embedding, ranking and reranking, before any call to the model
+    error: str | None = None  # what went wrong calling the model, when the outcome is "error"
 
     @property
     def abstained(self) -> bool:
@@ -104,6 +105,8 @@ class Answer:
             return f"the model declined ({self.generated.refusal if self.generated else 'refusal'})"
         if self.outcome == "cut-off":
             return "the answer hit the token limit"
+        if self.outcome == "error":
+            return f"the call failed: {self.error}"
         return ""
 
 
@@ -132,15 +135,35 @@ def read(context: Context, generated: Generated) -> tuple[Outcome, list[Citation
 
 
 def answer(
-    question: str, retriever: Retriever, generator: Generator, retrieval: Retrieval = DEFAULT_RETRIEVAL
+    question: str,
+    retriever: Retriever,
+    generator: Generator,
+    retrieval: Retrieval = DEFAULT_RETRIEVAL,
+    retries: int | None = None,
 ) -> Answer:
-    """Retrieve, and generate only when a passage qualified."""
+    """Retrieve, and generate only when a passage qualified. A call that fails (the API or CLI raised)
+    propagates, unless `retries` is given: then it is tried that many more times and, when it still
+    fails, the answer's outcome is "error" with the reason, so one bad call does not stop a benchmark."""
     started = time.perf_counter()
     context = retriever.retrieve(question, retrieval)
     retrieve_ms = (time.perf_counter() - started) * 1000
     if context.empty:
         return Answer(question=question, context=context, outcome="no-passage", retrieve_ms=retrieve_ms)
-    generated = generator.generate(context, question)
+    for attempt in range(1 + (retries or 0)):
+        try:
+            generated = generator.generate(context, question)
+            break
+        except ValueError as error:
+            if retries is None:
+                raise
+            if attempt == retries:
+                return Answer(
+                    question=question,
+                    context=context,
+                    outcome="error",
+                    retrieve_ms=retrieve_ms,
+                    error=str(error)[:300],
+                )
     outcome, citations, uncited = read(context, generated)
     return Answer(
         question=question,
@@ -173,7 +196,7 @@ def format_answer(a: Answer) -> str:
     lines = []
     if a.outcome == "no-passage":
         lines.append(f"{ABSTAIN} No passage qualified: {a.reason}.")
-    elif a.outcome in ("refused", "cut-off"):
+    elif a.outcome in ("refused", "cut-off", "error"):
         lines.append(f"No answer: {a.reason}.")
     else:
         lines.append(marked(a))

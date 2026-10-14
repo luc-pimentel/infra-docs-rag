@@ -25,6 +25,7 @@ from .judge import Judge, Judgement
 
 Expect = Literal["answer", "abstain", "partial"]
 CLAIM_FLOOR = 0.8  # share of an answer's claims (gap sentences aside) that has to carry a citation to hold
+RETRIES = 1  # how many more times a failed model call is tried before the case is recorded as an error
 
 
 class GroundingQuery(BaseModel):
@@ -192,16 +193,26 @@ def evaluate_grounding(
 
     cases: list[Case] = []
     for qid, kind, text, expect, hypothesis, this in todo:
-        a = answer(text, retriever, generator, this)
+        # One failed call is one case with outcome "error", tried twice; the run goes on.
+        a = answer(text, retriever, generator, this, retries=RETRIES)
         right = answers.get(qid)
         retrieved = cited = flags = None
         if right is not None:
             flags = [right.answered_by(s.chunk) for s in a.context.sources]
             retrieved = any(flags)
             cited = any(right.answered_by(c) for c in a.cited_chunks) if a.outcome == "answered" else None
-        judgement = judge.judge(a.context, text, marked(a)) if judge and a.outcome == "answered" else None
+        judgement = None
+        if judge and a.outcome == "answered":
+            try:
+                judgement = judge.judge(a.context, text, marked(a))
+            except (
+                ValueError
+            ) as error:  # the judge is a reading, not a verdict: its absence is recorded, not fatal
+                print(f"{qid}: the judge failed ({str(error)[:120]}); no reading")
         cases.append(Case(qid, kind, expect, hypothesis, a, retrieved, cited, judgement, flags))
         line = f"{qid}: {a.outcome}" + (f", {a.cited_share:.0%} cited" if a.outcome == "answered" else "")
+        if a.outcome == "error":
+            line += f" ({a.error})"
         if judgement is not None:
             line += (
                 f" · {judge.name} grounded {judgement.grounded:.2f}, fabricated {judgement.fabricated:.2f}"

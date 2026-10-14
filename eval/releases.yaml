@@ -1,0 +1,62 @@
+# The releases of the pipeline: each one a saved run that cleared the gates against the release
+# before it, with the lineage of what it measured. `current` is the one that answers questions.
+# Written by `infra-docs-rag pipeline release` and `pipeline rollback`; do not edit by hand.
+current: r3
+releases:
+- name: r1
+  created_at: '2026-10-12T20:50:27+00:00'
+  run: v1-dense-claude-code
+  manifest:
+    version: v1-dense
+    ingest_version: 0.1.0+8e4b1a0
+    chunking_version: section-aware-512-64-context+825a7940b716
+    embedding_version: BAAI/bge-small-en-v1.5@5c38ec7c405e
+    index_version: 3971d9f1e10e
+    prompt_version: cite-v1+e732a9f0cc40
+    retrieval_version: v1-dense+97e3615c26c9
+    generator: claude-opus-5-5
+    backend: claude-code
+    eval_run_id: v1-dense-claude-code
+    git_sha: 1b66515
+    created_at: '2026-10-12T16:33:54+00:00'
+  against: null
+  gates: first release, no baseline to compare against
+  note: the stage 04 pipeline, the first release
+- name: r2
+  created_at: '2026-10-12T20:50:27+00:00'
+  run: v2-hybrid-rerank-claude-code
+  manifest:
+    version: v2-hybrid-rerank
+    ingest_version: 0.1.0+8e4b1a0
+    chunking_version: section-aware-512-64-context+825a7940b716
+    embedding_version: BAAI/bge-small-en-v1.5@5c38ec7c405e
+    index_version: 3971d9f1e10e
+    prompt_version: cite-v1+e732a9f0cc40
+    retrieval_version: v2-hybrid-rerank+cc59ba7751e4
+    generator: claude-opus-5-5
+    backend: claude-code
+    eval_run_id: v2-hybrid-rerank-claude-code
+    git_sha: b228565
+    created_at: '2026-10-12T16:25:00+00:00'
+  against: r1
+  gates: passes
+  note: hybrid fusion and the cross-encoder, stages 05 and 06
+- name: r3
+  created_at: '2026-10-12T20:50:31+00:00'
+  run: v2-hybrid-rerank-claude-code
+  manifest:
+    version: v2-hybrid-rerank
+    ingest_version: 0.1.0+8e4b1a0
+    chunking_version: section-aware-512-64-context+825a7940b716
+    embedding_version: BAAI/bge-small-en-v1.5@5c38ec7c405e
+    index_version: 3971d9f1e10e
+    prompt_version: cite-v1+e732a9f0cc40
+    retrieval_version: v2-hybrid-rerank+cc59ba7751e4
+    generator: claude-opus-5-5
+    backend: claude-code
+    eval_run_id: v2-hybrid-rerank-claude-code
+    git_sha: b228565
+    created_at: '2026-10-12T16:25:00+00:00'
+  against: r1
+  gates: passes
+  note: rolled forward after the rollback demo

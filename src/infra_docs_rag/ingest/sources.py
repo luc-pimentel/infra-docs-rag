@@ -64,17 +64,46 @@ def load_manifest(raw_dir: Path) -> dict[str, dict]:
     return json.loads(manifest.read_text()) if manifest.exists() else {}
 
 
+class FetchFailed(Exception):
+    """One or more sources could not be downloaded; the others were, and the manifest says which."""
+
+    def __init__(self, failures: dict[str, str]) -> None:
+        self.failures = failures
+        shown = list(failures.items())[:3]
+        listed = "; ".join(f"{sid}: {why}" for sid, why in shown)
+        more = f"; and {len(failures) - len(shown)} more" if len(failures) > len(shown) else ""
+        super().__init__(
+            f"{len(failures)} source(s) could not be fetched ({listed}{more}); data/raw/manifest.json has each error"
+        )
+
+
 def fetch(sources: list[Source], raw_dir: Path, refresh: bool = False) -> dict[str, dict]:
-    """Download every URL source once; the manifest records when and what was fetched."""
+    """Download every URL source once; the manifest records when and what was fetched. A source that
+    fails is recorded with its error and the rest are still downloaded; the manifest is written after
+    each one, so a retry only downloads what is still missing. Raises FetchFailed at the end when any
+    source failed, with the manifest already on disk."""
     raw_dir.mkdir(parents=True, exist_ok=True)
     manifest = load_manifest(raw_dir)
+    failures: dict[str, str] = {}
     with httpx.Client(follow_redirects=True, timeout=60, headers={"User-Agent": USER_AGENT}) as client:
         for source in sources:
             target = source.raw_file(raw_dir)
-            if source.path or (target.exists() and source.id in manifest and not refresh):
+            have = target.exists() and bool(manifest.get(source.id, {}).get("sha256"))
+            if source.path or (have and not refresh):
+                for key in ("error", "error_at"):  # a refresh that failed earlier; the file is on disk
+                    manifest.get(source.id, {}).pop(key, None)
                 continue
-            response = client.get(source.url)
-            response.raise_for_status()
+            try:
+                response = client.get(source.url)
+                response.raise_for_status()
+            except httpx.HTTPError as error:
+                why = f"{type(error).__name__}: {error}"[:200]
+                failures[source.id] = why
+                entry = manifest.setdefault(source.id, {"url": source.url})
+                entry["error"] = why
+                entry["error_at"] = datetime.now(UTC).isoformat(timespec="seconds")
+                print(f"failed {source.id}: {why}")
+                continue
             target.write_bytes(response.content)
             manifest[source.id] = {
                 "url": source.url,
@@ -86,5 +115,8 @@ def fetch(sources: list[Source], raw_dir: Path, refresh: bool = False) -> dict[s
                 "content_type": response.headers.get("content-type"),
             }
             print(f"fetched {source.id} ({len(response.content):,} bytes)")
+            (raw_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     (raw_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    if failures:
+        raise FetchFailed(failures)
     return manifest

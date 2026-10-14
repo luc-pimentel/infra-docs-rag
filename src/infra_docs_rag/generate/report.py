@@ -17,7 +17,7 @@ def shown(a: Answer, limit: int = 700) -> str:
     """An answer as a table cell: the marked text, cut when long, or why there is none."""
     if a.outcome == "no-passage":
         text = f"{ABSTAIN} (no call: {a.reason})"
-    elif a.outcome in ("refused", "cut-off"):
+    elif a.outcome in ("refused", "cut-off", "error"):
         text = f"No answer: {a.reason}"
     else:
         text = marked(a)
@@ -36,7 +36,7 @@ def sample(c: Case) -> list[str]:
     lines = [f"### `{c.id}` · {c.kind} · expected to {c.expect}: {c.verdict}", "", f"**Q:** {a.question}", ""]
     if a.outcome == "no-passage":
         lines.append(f"**A:** {ABSTAIN} *(no call made: {a.reason})*")
-    elif a.outcome in ("refused", "cut-off"):
+    elif a.outcome in ("refused", "cut-off", "error"):
         lines.append(f"**A:** No answer: {a.reason}.")
     else:
         lines.append("**A:** " + marked(a).replace("\n", "\n> "))
