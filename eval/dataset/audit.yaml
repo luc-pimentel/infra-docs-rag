@@ -1,0 +1,125 @@
+# The audit of generated.yaml: one decision per generated example, read against the chunk it was
+# written from. `kept` enters the dataset as is; `edited` enters with the fields given here replacing
+# the generated ones; `discarded` does not enter. Every decision says why, and `dataset check` refuses
+# an audit that misses an example. Audited first by Claude, for review by Lucas; a decision he flips is
+# the one that stands.
+#
+# What the reading looked for: is the answer in the passage and nothing else; would a person type the
+# question, or is it the passage's first sentence turned around; does the benchmark already ask it.
+
+auditor: Claude, draft for review by Lucas Pimentel
+generated: eval/dataset/generated.yaml
+
+decisions:
+  - id: gen-01
+    decision: kept
+    reason: Both keys and the default shell order are in the passage; a question an operator would ask.
+  - id: gen-02
+    decision: kept
+    reason: The glob rule, the omitted-field rule and the default exclusions are all stated in the comment block.
+  - id: gen-03
+    decision: kept
+    reason: Release 2.10, the profile field and the two components that must mount the file are all in the passage.
+  - id: gen-04
+    decision: kept
+    reason: Matches the passage's suggested Kustomize approach and the example's contents.
+  - id: gen-05
+    decision: kept
+    reason: The three fields and the no-oci-prefix note are in the OCI example; a question people hit.
+  - id: gen-06
+    decision: kept
+    reason: The inclusions-minus-exclusions rule is the passage's last sentence; a good edge-case question.
+  - id: gen-07
+    decision: kept
+    reason: The 262KB limit and the last-applied-configuration reason are stated in the install note.
+  - id: gen-08
+    decision: kept
+    reason: Formats, build time, linking and post-build validation are all in the paragraph; the answer keeps "not limited to".
+  - id: gen-09
+    decision: kept
+    reason: The condition (root cause analysis says it may recur) and the feedback loop are in the passage.
+  - id: gen-10
+    decision: kept
+    reason: Each practice in the answer is one of the passage's bullets.
+  - id: gen-11
+    decision: kept
+    reason: Grounded in the two paragraphs; the same chunk the benchmark's page-9 question labels, asked about its content instead of its page.
+  - id: gen-12
+    decision: edited
+    reason: >-
+      The answer is grounded, but the generated question is the passage's own wording ("the following
+      questions should be evaluated") turned around; nobody types it. Rephrased as the question a person
+      asks, with the same answer.
+    query: How should I harden a container image, and what should I check it for?
+    difficulty: medium
+  - id: gen-13
+    decision: kept
+    reason: GitHub and GitLab, Peribolos with Prow and Kubernetes, and gittuf with its sandbox status are all stated.
+  - id: gen-14
+    decision: kept
+    reason: Signed attestations, the metadata store, the policy listing the tests and attestation at each step are all in the passage.
+  - id: gen-15
+    decision: discarded
+    reason: >-
+      Grounded, but an essay question about how the paper frames open source versus commercial supply
+      chains, not something a person asks a documentation assistant; the dataset covers this paper with
+      practice questions and the page question already.
+  - id: gen-16
+    decision: kept
+    reason: Root-of-trust delegation, the signing entity, public keys and freshness are in the passage.
+  - id: gen-17
+    decision: kept
+    reason: The three sentences of the passage, in order; the question is the one a CI owner asks.
+  - id: gen-18
+    decision: kept
+    reason: Grounded; the addon/operator example is the passage's own.
+  - id: gen-19
+    decision: kept
+    reason: Both steps and the reading of the diff are in the passage; the best of the set for a real debugging session.
+  - id: gen-20
+    decision: discarded
+    reason: >-
+      The benchmark already asks this (pause-rollout, "Can I make several changes to a Deployment without
+      each one starting a new rollout?") and labels the Pausing section for it; this chunk is a one-line
+      bullet in the Use Case list, so the generated answer is thinner than the dataset's record.
+  - id: gen-21
+    decision: kept
+    reason: >-
+      The passage says a revision is created only on a Pod template change and that only the template is
+      rolled back; a sharp question the benchmark does not have.
+  - id: gen-22
+    decision: edited
+    reason: >-
+      The answer is grounded, but its last sentence (open an issue if your use case is not covered) is the
+      passage's aside, not part of the answer to the question. Dropped it.
+    reference_answer: >-
+      No. You should not manage ReplicaSets owned by a Deployment. You describe a desired state in the
+      Deployment, and it changes the actual state to match at a controlled rate.
+  - id: gen-23
+    decision: kept
+    reason: Workload resources, singleton Pods and StatefulSet for state are all in the first paragraph.
+  - id: gen-24
+    decision: kept
+    reason: OOM kill for memory and throttling for CPU are stated in one sentence each.
+  - id: gen-25
+    decision: kept
+    reason: The value, the RFC, the hint semantics and the mirroring to EndpointSlice are in the passage.
+  - id: gen-26
+    decision: kept
+    reason: The failure, its reason and the "works the same otherwise" sentence are all in the passage.
+  - id: gen-27
+    decision: kept
+    reason: Each sentence maps to one of the passage's three paragraphs.
+  - id: gen-28
+    decision: kept
+    reason: The ALERTS series, its value and staleness, and the Alerts tab are all stated.
+  - id: gen-29
+    decision: kept
+    reason: The parentheses rule and its consequence are the passage's own sentence; a question a person asks after being bitten.
+  - id: gen-30
+    decision: edited
+    reason: >-
+      Grounded, and a different angle from the benchmark's promql-offset question (where the modifier goes
+      rather than how to ask for a past value). The generated question carried a typographic dash and an
+      aside; rephrased plainly.
+    query: In PromQL, does the offset go inside or outside sum() when I want http_requests_total from five minutes ago?

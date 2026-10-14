@@ -165,3 +165,63 @@ uv run infra-docs-rag pipeline release --candidate v2-hybrid-rerank-claude-code 
 A new pipeline version is an entry in `versions.yaml`, one `evaluate-grounding --version` run, and one
 `pipeline release --candidate` against the current release (or `evaluate-pipeline` against any run). A new question is an entry in one of the three
 question files with its hypothesis written first; the next run picks it up.
+
+## 6. The dataset
+
+[`dataset/records.yaml`](dataset/records.yaml) is the evaluation dataset proper: where the benchmark
+files say *where* an answer is and what a run has to do, a record says *what a right answer is*, which
+passages it rests on, and the failure mode the example is in the set to catch. The record schema is
+[`dataset/schema.json`](dataset/schema.json) (generated from the model in `evaluation/dataset.py`); the
+report is [`../reports/dataset.md`](../reports/dataset.md).
+
+```yaml
+- id: mh-undo-after-history-zero
+  query: I set revisionHistoryLimit to 0 on my Deployment. Can I still run kubectl rollout undo?
+  category: multi-hop            # fact-lookup | multi-hop | ambiguous | no-answer | stale | adversarial
+  expect: answer                 # answer | abstain | partial | clarify
+  difficulty: hard               # easy | medium | hard
+  failure_mode: missing-hop      # the failure this example is here to catch; `none` for a clean one
+  split: test                    # dev | test
+  origin: hand-written           # benchmark | traces | hand-written | generated
+  source_doc_ids: [k8s-deployment-md]
+  contexts: [k8s-deployment-md:54258, k8s-deployment-md:24763]   # chunk ids under the file's `chunking`
+  reference_answer: >-           # from the contexts alone
+    No. ...
+  tags: [kubernetes, deployment, rollback]
+  benchmark_id: ...              # the benchmark question it was taken from (benchmark records only)
+  note: >-                       # why it is in the set
+    ...
+```
+
+**Where records come from.** Most are benchmark questions, chosen because a saved run did something
+wrong with them: the saved runs are the record of real failures, and `dataset report` prints every
+run's verdict next to each record so the designed failure mode can be checked against what was seen.
+`traces` records are questions people asked the running service (`data/traces/`) that the benchmark
+did not have. `hand-written` records cover the failure modes the runs cannot show yet: a deprecated
+field presented as current (*stale*), a question with several readings (*ambiguous*), an answer that
+needs two passages (*multi-hop*). `generated` records come from [`dataset/generated.yaml`](dataset/generated.yaml),
+a testset a model wrote from sampled chunks, filtered by [`dataset/audit.yaml`](dataset/audit.yaml):
+each generated example is kept, edited or discarded with a reason, and only the first two enter.
+
+**Expectations.** `answer` means an answer with every claim cited from the contexts; `abstain` the
+fixed sentence from section 1; `partial` an answer to the part the passages cover with the rest named
+as uncovered (the false-premise and mixed-scope questions, and a stale method asked for by name);
+`clarify` a reply that names the readings the passages support and asks which, or answers each
+briefly, for an ambiguous question. The reference answer for an abstention is the sentence itself; for
+everything else it is what a right answer says, in one to four sentences, from the contexts alone.
+
+**Failure modes.** `none`, `false-abstention`, `retrieval-miss`, `wrong-passage`, `uncited-claims`,
+`unverified-citation`, `answered-anyway`, `judge-misread` are the ones a saved run can show, by its
+verdict, the right-passage flags, the typed citations that did not verify and the judge's reading at
+the calibrated thresholds; `fabrication`, `stale-answer`, `wrong-reading` and `missing-hop` are
+designed into the set and not measured yet. The report lists which.
+
+**Splits.** `dev` holds the records whose answers were read when the scoring rules were revised (the
+hand labels and the calibration report) plus a share of the new ones; `test` is held out. A rule tuned
+on dev is checked on test.
+
+**Checks.** `dataset check` validates the schema, that every context exists in the named chunking and
+its source in `sources.yaml`, that a benchmark record's contexts are among the passages the benchmark
+labels as right for its question (so a relabelled benchmark surfaces here), that an adversarial
+record's expectation matches the benchmark's, that every category is present and the curated set
+holds 30 to 50 records, and that the audit decides every generated example. It exits 1 on a problem.
