@@ -14,6 +14,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+      - name: tesseract (the OCR fallback the PDF tests exercise)
+        run: sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr
       - run: uv sync --frozen
       - name: lint
         run: uv run ruff check src tests && uv run ruff format --check src tests
