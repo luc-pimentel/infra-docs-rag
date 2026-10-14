@@ -1,0 +1,161 @@
+# The metric matrix and the slice gates for `infra-docs-rag dataset metrics`.
+#
+# `matrix` maps each failure mode in eval/dataset/records.yaml to the metric that measures it, the
+# direction that is better, and the threshold it is held to on the records designed for that mode
+# (`slice`, by default `failure_mode=<mode>`; the names `dataset metrics --list-metrics` prints). A
+# matrix entry is a target the report checks and shows; a `blocker: true` entry is one whose miss
+# means the pipeline must not ship, and the report says so. The thresholds are read off the baseline
+# run (reports/metrics.md) and set where a miss is a real regression, not noise: a slice of five
+# records moves by 20% when one flips.
+#
+# `gates` are the pass/fail rules a change has to clear, each on one slice (`all`, or
+# `<field>=<value>` for category, failure_mode, difficulty, split, origin). The rules are the ones
+# eval/gates.yaml uses: min / max against a value, no-drop / no-rise against a baseline run with a
+# tolerance. A critical gate that fails exits 1; that is the PR check.
+
+matrix:
+  - failure_mode: none
+    metric: answers.held
+    direction: higher
+    rule: min
+    value: 0.9
+    why: a clean example that stops holding is a regression with no excuse
+
+  - failure_mode: false-abstention
+    metric: abstention.false
+    direction: lower
+    rule: max
+    value: 0.4
+    why: these records abstained in some run with the passage in hand; two of five still do, the target is under that
+
+  - failure_mode: retrieval-miss
+    metric: retrieval.context_recall
+    direction: higher
+    rule: min
+    value: 0.5
+    why: a paraphrase whose passage the ranking drops; recall of the named passage is the number to move
+
+  - failure_mode: wrong-passage
+    metric: faithfulness.right_cited
+    direction: higher
+    rule: min
+    value: 1.0
+    why: both records cited the wrong passage under dense retrieval alone and the right one since; any slip is the old failure back
+
+  - failure_mode: uncited-claims
+    metric: faithfulness.claim_cited_median
+    direction: higher
+    rule: min
+    value: 0.8
+    why: the claim floor from the calibration; under it an answer is partly uncited
+
+  - failure_mode: unverified-citation
+    metric: faithfulness.unverified_citations
+    direction: lower
+    rule: max
+    value: 2
+    why: one typed quote that fails to verify per record is the pattern; more means the quoting broke
+
+  - failure_mode: answered-anyway
+    metric: abstention.expected
+    direction: higher
+    rule: min
+    value: 0.9
+    blocker: true
+    why: a question the corpus does not answer, answered, is a hallucination to the person reading it
+
+  - failure_mode: judge-misread
+    metric: faithfulness.judge_flagged_held
+    direction: lower
+    rule: max
+    value: 0.0
+    why: an answer the checks accept and the judge flags is the postmortem's case; one is a misread to investigate
+
+  - failure_mode: fabrication
+    metric: faithfulness.judge_fabricated
+    direction: lower
+    rule: max
+    value: 0.0
+    blocker: true
+    why: a fact no passage gives, on the records written to tempt one, blocks
+
+  - failure_mode: stale-answer
+    metric: stale.deprecation_named
+    direction: higher
+    rule: min
+    value: 0.8
+    why: the reader's deprecation reading on the stale slice; one of five may be missed, two is the failure mode
+
+  - failure_mode: wrong-reading
+    metric: ambiguity.readings_named
+    direction: higher
+    rule: min
+    value: 0.8
+    why: the reader's readings-named reading on the ambiguous slice
+
+  - failure_mode: missing-hop
+    metric: hops.covered
+    direction: higher
+    rule: min
+    value: 0.8
+    why: a two-passage answer has to cite both; the record names them
+
+gates:
+  # Hallucination blockers: on the records that expect an abstention, and on the judge's reading.
+  - slice: category=no-answer
+    metric: abstention.expected
+    rule: min
+    value: 1.0
+    why: a no-answer record answered is a confident reply with no basis; blocks
+
+  - slice: all
+    metric: faithfulness.judge_fabricated
+    rule: max
+    value: 0.05
+    why: the judge's "a fact was added" reading at its calibrated threshold, over every answer
+
+  # The three the module asks for, on the whole set: faithfulness, relevance, retrieval.
+  - slice: all
+    metric: faithfulness.judge_grounded
+    rule: min
+    value: 0.9
+    why: nine answers in ten read as grounded by the judge
+
+  - slice: all
+    metric: relevance.judge_relevant
+    rule: min
+    value: 0.9
+    why: an answer that does not address the question is wrong whatever it cites
+
+  - slice: all
+    metric: retrieval.context_recall
+    rule: no-drop
+    tolerance: 0.03
+    why: the named passages reaching the model is the ceiling on everything after; two records' worth of slack
+
+  # Minimum slice scores: the held-out split and the clean examples.
+  - slice: split=test
+    metric: answers.held
+    rule: min
+    value: 0.7
+    why: the held-out split is what a rule tuned on dev is checked against
+
+  - slice: failure_mode=none
+    metric: answers.held
+    rule: min
+    value: 0.85
+    why: the clean examples held 28 of 31 on the baseline (three generated ones partly uncited or off the reference); one more may flip, two is a regression
+
+  # Maximum regression deltas against the baseline run.
+  - slice: all
+    metric: answers.held
+    rule: no-drop
+    tolerance: 0.03
+    why: two records' worth over the whole set
+
+  - slice: all
+    metric: relevance.reference_agrees
+    rule: no-drop
+    tolerance: 0.05
+    critical: false
+    why: agreement with the reference answers is the newest reading and the least calibrated; a warning

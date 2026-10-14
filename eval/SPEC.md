@@ -225,3 +225,59 @@ its source in `sources.yaml`, that a benchmark record's contexts are among the p
 labels as right for its question (so a relabelled benchmark surfaces here), that an adversarial
 record's expectation matches the benchmark's, that every category is present and the curated set
 holds 30 to 50 records, and that the audit decides every generated example. It exits 1 on a problem.
+
+## 7. Metrics by failure mode
+
+[`matrix.yaml`](matrix.yaml) maps each failure mode of the dataset to the metric that measures it, the
+direction that is better and the threshold it is held to on the records designed for that mode;
+[`../reports/metrics.md`](../reports/metrics.md) is the baseline score report over a dataset run. A
+dataset run (`dataset run`) answers every record through a pipeline version and saves the result under
+`runs/` in the same format as a benchmark run, with two differences: a right passage is one the record's
+`contexts` name, and each answer carries the dataset reader's four probabilities beside the judge's
+three.
+
+**The reader.** The same probability judge as section 3, asked four questions the benchmark could not
+ask because it had no reference answer: *relevant* (the answer addresses the question asked),
+*reference_agrees* (it reaches the reference answer's conclusion and keeps its main points),
+*deprecation_named* (when a passage marks something the answer recommends as deprecated, removed or
+replaced, the answer says so; true when there is nothing to flag), *readings_named* (when the question
+has several readings, the answer names them, asks which, or says which it took; true when it has one).
+The state is the passages under their headings, the question, the reference answer and the marked
+answer. A probability at or over 0.50 reads as yes. The reader is not calibrated against hand labels
+yet; that is the next stage, and the gates on its readings are set loose until then.
+
+**Metrics.** Every stage 08 metric, computed on a slice as on a run (the `grounding.*` names also
+appear as `faithfulness.*`), plus:
+
+- `retrieval.context_recall`: share of the record's named passages among the ones the model read,
+  averaged over the records that name any; `retrieval.context_precision`: share of the passages read
+  that the record names.
+- `relevance.judge_relevant`, `relevance.reference_agrees`: the reader's two main questions, over the
+  answered records it read.
+- `abstention.expected`: records expecting an abstention that got one; `abstention.false`: records
+  expecting an answer, whole or partial, that got the abstention sentence.
+- `faithfulness.judge_flagged_held`: answers the checks accept (right passage cited, claims cited) that
+  the judge reads as ungrounded or fabricated: the judge-misread signal.
+- `stale.deprecation_named`, `ambiguity.readings_named`: the reader's two mode-specific questions on
+  the stale and ambiguous slices.
+- `hops.covered`: multi-hop answers that cite at least two of the record's named passages.
+
+**Slices.** `all`, then `<field>=<value>` for category, failure_mode, difficulty, split and origin.
+The matrix reads each failure mode's metric on `failure_mode=<mode>` unless the entry names another
+slice; a slice of five records moves by 20% when one flips, so the slices locate and the whole set
+decides.
+
+**Rules.** A matrix entry is a target (`min` or `max` against a value) the report checks; `blocker:
+true` marks the misses the pipeline must not ship with (a no-answer record answered, a fabricated
+fact). The `gates` are the pass/fail rules a change has to clear, on one slice each, with the rules of
+section 4: `min` / `max` against a value, `no-drop` / `no-rise` against a baseline dataset run with a
+tolerance. `dataset metrics --run <run> [--baseline <run>]` writes the report and exits 1 when a
+critical gate fails; without a baseline the delta gates are skipped, not failed. That exit code is the
+PR check: `.github/workflows/checks.yml` runs it on the committed baseline run beside the tests.
+
+**Diagnosis.** For every record whose expectation did not hold, the report says where the failure
+sits: *retrieval* when none of the named passages reached the model, *generation* when one did and the
+answer still failed (an abstention with the passage in hand, the wrong passage cited, claims left
+uncited), *both* when an abstention was expected and a near miss cleared the threshold and was
+answered, and *reading* for a record that held by the checks and that the judge or the reader
+disputes.
