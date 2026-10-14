@@ -8,8 +8,9 @@ cover a question, the service says so instead of guessing.
 uv run infra-docs-rag answer "How do I undo a bad release?"
 ```
 
-**Status:** complete through the capstone. [`docs/capstone.md`](docs/capstone.md) is the design in one
-page; [`docs/demo.md`](docs/demo.md) is the fifteen-minute demo.
+**Status:** the service is complete through the capstone ([`docs/capstone.md`](docs/capstone.md) is the
+design in one page, [`docs/demo.md`](docs/demo.md) the fifteen-minute demo); the evaluation track that
+follows it has started with the dataset (stage 13).
 
 ## Architecture
 
@@ -109,6 +110,24 @@ Each stage ships into this repo, so the service grows with the checklist.
   with the gates between each and the rollback criteria, the design doc, the demo script and a
   postmortem ([design](docs/capstone.md), [versions](reports/versions.md), [demo](docs/demo.md),
   [postmortem](docs/postmortem.md))
+
+**Evaluation, in depth**
+
+- [x] 13 · Evaluation dataset from real failure modes: a record schema (query, contexts, reference
+  answer, tags, sources, difficulty, failure mode, split), 46 curated examples across fact lookup,
+  multi-hop, ambiguous, no-answer, stale and adversarial questions, most of them benchmark questions
+  a saved run got wrong and the rest written for the failures the runs cannot show yet or taken from
+  what people asked the service; a model-written testset audited example by example; every run's
+  verdict printed beside each record ([spec](eval/SPEC.md), [report](reports/dataset.md))
+- [ ] 14 · Metrics that match the failure modes
+- [ ] 15 · LLM-as-judge calibrated against human labels, second round
+- [ ] 16 · Evals as regression tests for every change
+- [ ] 17 · Traces that explain why an eval fails
+- [ ] 18 · Prompts, retrieval config and eval assets versioned together
+- [ ] 19 · Online evaluators and drift detection
+- [ ] 20 · Cost and latency as quality metrics
+- [ ] 21 · Safety and guardrail evals
+- [ ] 22 · The evaluation system as an operations workflow
 
 ## Corpus
 
@@ -310,6 +329,19 @@ the gates.
   1, which is what blocks a change; a non-critical one warns. The shipped comparison is the latest
   release against the one before it (v2 against v3 at the time of writing; v1 against v2 was the
   question stages 05 and 06 answered one metric at a time, asked once more end to end).
+- **Dataset:** [`eval/dataset/records.yaml`](eval/dataset/records.yaml) holds 46 curated records, each
+  a question with the passages a right answer rests on (by chunk id), the reference answer written from
+  those passages alone, a category (fact lookup, multi-hop, ambiguous, no-answer, stale, adversarial),
+  a difficulty, a split and the failure mode it is there to catch. Most are benchmark questions a saved
+  run got wrong: an abstention on a question the docs answer, the wrong passage cited, claims left
+  uncited, an answer where the expectation was an abstention, the judge misreading a grounded answer.
+  The rest are written for what the runs cannot show yet (a deprecated field presented as current, a
+  question with several readings, an answer spread over two passages) or taken from what people asked
+  the running service. `dataset generate` writes a testset from sampled chunks through `claude -p`,
+  [`eval/dataset/audit.yaml`](eval/dataset/audit.yaml) keeps, edits or discards each example with a
+  reason, and `dataset report` checks everything against the chunks, the sources and the benchmark
+  labels, prints every run's verdict beside each record, and writes the
+  [report](reports/dataset.md) and the JSON schema ([spec](eval/SPEC.md#6-the-dataset)).
 
 ## Orchestration
 
@@ -445,6 +477,9 @@ uv run infra-docs-rag evaluate-grounding --generator claude-code --version v3-bu
 uv run python scripts/warm_cache.py eval/runs/v3-budget-claude-code   # fill the cache from a saved run, no model call
 uv run infra-docs-rag evaluate-pipeline --runs v1-dense-claude-code v2-hybrid-rerank-claude-code v3-budget-claude-code   # three versions side by side → reports/versions.md
 uv run infra-docs-rag serve --generator claude-code              # the service on http://127.0.0.1:8000, docs at /docs
+uv run infra-docs-rag dataset check                              # the evaluation dataset against the chunks, sources and benchmark; exit 1 on a problem
+uv run infra-docs-rag dataset generate --n 30 --seed 13          # a testset from sampled chunks through `claude -p`, for eval/dataset/audit.yaml to decide
+uv run infra-docs-rag dataset report                             # check, then reports/dataset.md and eval/dataset/schema.json
 uv run pytest
 ```
 
@@ -456,7 +491,8 @@ to `data/traces/traces.jsonl`, and the evidence to [`reports/ingestion.md`](repo
 [`reports/reranking.md`](reports/reranking.md), [`reports/grounding.md`](reports/grounding.md),
 [`reports/calibration.md`](reports/calibration.md), [`reports/evaluation.md`](reports/evaluation.md) and
 [`reports/orchestration.md`](reports/orchestration.md), [`reports/observability.md`](reports/observability.md),
-[`reports/latency-cost.md`](reports/latency-cost.md) and [`reports/versions.md`](reports/versions.md); the generation cache to `data/cache/`; saved benchmark runs go to `eval/runs/` and
+[`reports/latency-cost.md`](reports/latency-cost.md), [`reports/versions.md`](reports/versions.md) and
+[`reports/dataset.md`](reports/dataset.md); the generation cache to `data/cache/`; saved benchmark runs go to `eval/runs/` and
 releases to `eval/releases.yaml`, both committed.
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
 needs all three, about 660 MB). The first `retrieve` or `search` downloads the default reranker

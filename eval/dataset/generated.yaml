@@ -1,0 +1,464 @@
+# A testset written by a model from sampled chunks: one question and reference answer per chunk,
+# for `infra-docs-rag dataset generate`. Every example here is a candidate; audit.yaml says which
+# entered the dataset and why. Regenerating with the same seed samples the same chunks.
+
+chunking: section-aware-512-64-context
+model: claude-opus-5-5
+backend: claude-code
+effort: low
+prompt_sha256: ecb9b8f0ba5b
+seed: 13
+generated_at: '2026-10-14T01:22:19+00:00'
+examples:
+- id: gen-01
+  chunk_id: argocd-cm-yaml:20504
+  source_doc_id: argocd-cm-yaml
+  section: argocd-cm.yaml
+  query: How do I enable the exec terminal feature in the Argo CD UI, and which shells will it try?
+  reference_answer: 'Set `exec.enabled: "true"` in argocd-cm, because the UI exec feature is disabled
+    by default. The `exec.shells` setting controls which shells are allowed and the order they are tried.
+    The default list is "bash,sh,powershell,cmd".'
+  difficulty: hard
+  tags:
+  - argocd
+  - exec
+  - argocd-cm
+  - ui
+- id: gen-02
+  chunk_id: argocd-cm-yaml:8472
+  source_doc_id: argocd-cm-yaml
+  section: argocd-cm.yaml
+  query: How do I stop Argo CD from watching high-volume resource kinds so it uses less memory and puts
+    less load on the API server?
+  reference_answer: Add a `resource.exclusions` list to argocd-cm. Each entry gives glob patterns for
+    `apiGroups`, `kinds` and `clusters`, and any of those fields you leave out matches everything. events.k8s.io
+    and metrics.k8s.io are already excluded by default.
+  difficulty: hard
+  tags:
+  - argocd-cm
+  - resource exclusions
+  - performance
+  - api server
+- id: gen-03
+  chunk_id: argocd-declarative-setup-md:50021
+  source_doc_id: argocd-declarative-setup-md
+  section: Declarative Setup › Clusters › EKS › Alternative EKS Authentication Methods
+  query: How can I make Argo CD authenticate to an EKS cluster using credentials from an AWS profile file?
+  reference_answer: Since release 2.10, you can add a "profile" field to the awsAuthConfig in the cluster
+    secret's config, pointing to the path of an AWS credentials file, and Argo CD will read that file
+    and use its credentials to authenticate to AWS. For this to work, the profile file must be mounted
+    in both the argocd-server and argocd-application-controller components.
+  difficulty: hard
+  tags:
+  - argocd
+  - eks
+  - aws profile
+  - cluster authentication
+- id: gen-04
+  chunk_id: argocd-declarative-setup-md:67671
+  source_doc_id: argocd-declarative-setup-md
+  section: Declarative Setup › Manage Argo CD Using Argo CD
+  query: How can I have Argo CD manage its own installation and configuration?
+  reference_answer: Argo CD can manage itself because all of its settings are Kubernetes manifests. The
+    suggested approach is a Kustomize-based application that uses the base Argo CD manifests from https://github.com/argoproj/argo-cd
+    as a resource, then applies your changes on top. Those changes can be extra resources like cluster
+    and repository secrets, plus patches to config maps.
+  difficulty: medium
+  tags:
+  - argo cd
+  - self-management
+  - kustomize
+  - declarative setup
+- id: gen-05
+  chunk_id: argocd-declarative-setup-md:59049
+  source_doc_id: argocd-declarative-setup-md
+  section: Declarative Setup › Helm
+  query: How do I point an Argo CD Application at a Helm chart stored in an OCI registry?
+  reference_answer: In the Application's source, set `chart` to the chart name, `repoURL` to the registry
+    path (for example `registry-1.docker.io/bitnamicharts`), and `targetRevision` to the chart version.
+    Leave the `oci://` prefix off the repoURL.
+  difficulty: hard
+  tags:
+  - argo cd
+  - helm
+  - oci registry
+  - application
+- id: gen-06
+  chunk_id: argocd-declarative-setup-md:62501
+  source_doc_id: argocd-declarative-setup-md
+  section: Declarative Setup › Resource Exclusion/Inclusion
+  query: In Argo CD, what happens if I set both resource.inclusions and resource.exclusions in the ConfigMap?
+  reference_answer: You can use the two settings together. Argo CD takes the group/kinds listed in resource.inclusions
+    and removes any group/kinds listed in resource.exclusions, and what remains is the final set of resources.
+  difficulty: hard
+  tags:
+  - argocd
+  - resource inclusions
+  - resource exclusions
+  - configmap
+- id: gen-07
+  chunk_id: argocd-getting-started-stable:386
+  source_doc_id: argocd-getting-started-stable
+  section: Getting Started › 1. Install Argo CD
+  query: Why do I need --server-side when applying the Argo CD install manifests with kubectl?
+  reference_answer: Some Argo CD CRDs, such as ApplicationSet, exceed the 262KB annotation size limit
+    that client-side kubectl apply imposes. Server-side apply avoids this limit because it doesn't store
+    the last-applied-configuration annotation.
+  difficulty: medium
+  tags:
+  - argo cd
+  - installation
+  - server-side apply
+  - crd
+- id: gen-08
+  chunk_id: cncf-security-whitepaper:91589
+  source_doc_id: cncf-security-whitepaper
+  section: CLOUD NATIVE SECURITY WHITEPAPER › Security Assurance › Supply Chain Security
+  query: What formats should I use to generate an SBOM for my software, and when in the pipeline should
+    it be created?
+  reference_answer: Generate SBOMs at build time from the source code, using standardized formats such
+    as SPDX, CycloneDX or SWID; these are examples, not the only allowed formats. Each SBOM should link
+    to the SBOMs of the libraries and tools it imports. Operators can also run post-build SBOM generators
+    on binaries or images to check that the build-time SBOM is accurate.
+  difficulty: medium
+  tags:
+  - supply chain
+  - SBOM
+  - build pipeline
+  - software provenance
+- id: gen-09
+  chunk_id: cncf-security-whitepaper:24766
+  source_doc_id: cncf-security-whitepaper
+  section: CLOUD NATIVE SECURITY WHITEPAPER › Cloud Native Layers › Testing
+  query: When should developers write an automated regression test after finding a security misconfiguration
+    like a bad firewall rule?
+  reference_answer: If root cause analysis shows the misconfiguration has a reasonable chance of recurring,
+    developers should write an automated test to prevent its regression. The test fails and gives the
+    team feedback until the bug is fixed, then passes on the next merge, which protects against future
+    changes reintroducing the defect.
+  difficulty: hard
+  tags:
+  - regression testing
+  - misconfiguration
+  - root cause analysis
+  - security testing
+- id: gen-10
+  chunk_id: cncf-security-whitepaper:96049
+  source_doc_id: cncf-security-whitepaper
+  section: CLOUD NATIVE SECURITY WHITEPAPER › Security Assurance › GitOps
+  query: What security practices should I follow to protect the Git repository used for GitOps deployments?
+  reference_answer: Restrict access to repositories and branches, and never store unencrypted credentials
+    or secrets in Git; block sensitive data from being pushed. Enforce GPG-signed commits, require linear
+    history by disallowing force pushes, protect the main branch and require code review before merging.
+    Keep Git and GitOps tools up to date and monitor them for vulnerabilities, and rotate SSH keys and
+    Personal Access Tokens.
+  difficulty: medium
+  tags:
+  - gitops
+  - git security
+  - least privilege
+  - supply chain
+- id: gen-11
+  chunk_id: cncf-security-whitepaper:13794
+  source_doc_id: cncf-security-whitepaper
+  section: CLOUD NATIVE SECURITY WHITEPAPER › Cloud Native Layers
+  query: What is the difference between Containers-as-a-Service and Functions-as-a-Service in terms of
+    what the user has to manage?
+  reference_answer: With CaaS, users orchestrate and manage containers, applications, and clusters themselves
+    through a container-based virtualization platform via an API or web portal, with containers as the
+    fundamental resource. With FaaS, users just execute code in response to events while the cloud provider
+    automatically handles the physical hardware, virtual machine operating system, and web server software,
+    so users focus on individual functions and pay only for the resources used.
+  difficulty: medium
+  tags:
+  - CaaS
+  - FaaS
+  - deployment models
+  - cloud native
+- id: gen-12
+  chunk_id: cncf-security-whitepaper:23637
+  source_doc_id: cncf-security-whitepaper
+  section: CLOUD NATIVE SECURITY WHITEPAPER › Cloud Native Layers › Image hardening
+  query: What security questions should I evaluate when hardening container images?
+  reference_answer: Container images should be hardened against the threats you need to mitigate, while
+    still allowing some just-in-time configuration at runtime so they can integrate with the broader ecosystem.
+    To check security assurance objectives, ask whether the image restricts the execution environment
+    to a specific user, limits access to resources, and applies kernel-level restrictions on process execution.
+  difficulty: easy
+  tags:
+  - container images
+  - image hardening
+  - runtime configuration
+  - least privilege
+- id: gen-13
+  chunk_id: cncf-supply-chain-whitepaper:40229
+  source_doc_id: cncf-supply-chain-whitepaper
+  section: SOFTWARE SUPPLY CHAIN BEST PRACTICES V2 › Declare protected repository namespaces
+  query: What tools can I use to define which branches and folders in a Git repository are protected and
+    who is allowed to change them?
+  reference_answer: GitHub and GitLab have built-in ways to mark branches, files and folders as protected.
+    For GitHub, the open source tool Peribolos (part of Prow, and used by Kubernetes) can declare access
+    control rules. Another option is gittuf, an OpenSSF sandbox project, which can also verify that the
+    policy is being enforced.
+  difficulty: medium
+  tags:
+  - protected branches
+  - repository policy
+  - access control
+  - supply chain
+- id: gen-14
+  chunk_id: cncf-supply-chain-whitepaper:32775
+  source_doc_id: cncf-supply-chain-whitepaper
+  section: SOFTWARE SUPPLY CHAIN BEST PRACTICES V2 › Testing
+  query: How should test results be recorded so they can be checked against software supply chain policy
+    before deployment?
+  reference_answer: Test results should be captured as signed, verifiable attestations and stored in a
+    metadata store, where they can be evaluated against supply chain policy. The policy should list the
+    tests expected to run before deployment, and testing should be attested to at each step of the delivery
+    lifecycle.
+  difficulty: medium
+  tags:
+  - supply chain
+  - testing
+  - attestations
+  - policy
+- id: gen-15
+  chunk_id: cncf-supply-chain-whitepaper:22779
+  source_doc_id: cncf-supply-chain-whitepaper
+  section: 'SOFTWARE SUPPLY CHAIN BEST PRACTICES V2 › PART 2: OVERVIEW SECURING THE SOFTWARE SUPPLY CHAIN'
+  query: How does the software supply chain for open source projects differ from that of commercial software?
+  reference_answer: 'Commercial software supply chains rest on a vendor-buyer relationship, with contracts
+    that set requirements for quality, functionality, support and delivery times. Open source software
+    has no such two-way relationship: developers often don''t know who uses their project until someone
+    files a bug report or feature request. Commercial vendors can charge extra when customers need stricter
+    security, but open source projects have to find their own resources to meet those needs.'
+  difficulty: medium
+  tags:
+  - supply chain
+  - open source
+  - commercial software
+- id: gen-16
+  chunk_id: cncf-supply-chain-whitepaper:82698
+  source_doc_id: cncf-supply-chain-whitepaper
+  section: SOFTWARE SUPPLY CHAIN BEST PRACTICES V2 › Use TUF to manage signing of artifacts
+  query: How can I control which team or build server is trusted to sign each artifact in my supply chain?
+  reference_answer: Use The Update Framework (TUF), which uses a root-of-trust model to delegate trust
+    from a single root to the individual teams or developers who sign artifacts. Use it to delegate to
+    the expected signing entity for each artifact, which may be a build server or a developer. Clients
+    can then verify the repository's contents with public keys, and TUF's additional metadata lets them
+    check that the content is fresh.
+  difficulty: medium
+  tags:
+  - TUF
+  - artifact signing
+  - trust delegation
+  - supply chain
+- id: gen-17
+  chunk_id: cncf-supply-chain-whitepaper:43186
+  source_doc_id: cncf-supply-chain-whitepaper
+  section: SOFTWARE SUPPLY CHAIN BEST PRACTICES V2 › Require verification attestations / confirmation
+  query: How can a CI pipeline confirm that source code policies were actually enforced for a commit before
+    it builds it?
+  reference_answer: Record the verification of source code policies as attestations. A CI pipeline or
+    another system can then check those attestations to confirm the policies were enforced and met for
+    that specific revision before it runs a build. Ongoing work such as the SLSA source track is defining
+    guidelines for how to generate these attestations at different levels.
+  difficulty: medium
+  tags:
+  - attestations
+  - source code policy
+  - CI verification
+  - SLSA
+- id: gen-18
+  chunk_id: k8s-configmap:5661
+  source_doc_id: k8s-configmap
+  section: ConfigMaps › Using ConfigMaps
+  query: Can a ConfigMap be used by something other than a Pod's containers, like an operator or addon?
+  reference_answer: Yes. ConfigMaps are most commonly used to configure containers in a Pod in the same
+    namespace, but they can also be used separately by other parts of the system without being exposed
+    to a Pod. For example, addons or operators may adjust their behavior based on a ConfigMap.
+  difficulty: medium
+  tags:
+  - configmap
+  - operators
+  - configuration
+- id: gen-19
+  chunk_id: k8s-debug-pods:2848
+  source_doc_id: k8s-debug-pods
+  section: Debug Pods › Diagnosing the problem › Debugging Pods › My pod is running but not doing what
+    I told it to do
+  query: My pod was created without errors but it isn't running the command I specified. How can I find
+    out if a field in my YAML was silently ignored?
+  reference_answer: Delete the pod and create it again with validation, for example `kubectl apply --validate
+    -f mypod.yaml`, which reports unknown fields such as a misspelled `commnd`. Then run `kubectl get
+    pods/mypod -o yaml > mypod-on-apiserver.yaml` and compare it with your original file. Extra lines
+    in the apiserver version are expected, but lines in your original that are missing from the apiserver
+    version may mean there's a problem with your pod spec.
+  difficulty: medium
+  tags:
+  - pod debugging
+  - kubectl validate
+  - pod spec
+  - misspelled fields
+- id: gen-20
+  chunk_id: k8s-deployment-md:510
+  source_doc_id: k8s-deployment-md
+  section: Deployments › Use Case
+  query: How do I make several changes to a Deployment's pod template without triggering a new rollout
+    for each change?
+  reference_answer: Pause the rollout of the Deployment, apply the multiple fixes to its PodTemplateSpec,
+    and then resume it to start a single new rollout.
+  difficulty: medium
+  tags:
+  - deployment
+  - pause rollout
+  - PodTemplateSpec
+- id: gen-21
+  chunk_id: k8s-deployment-md:17551
+  source_doc_id: k8s-deployment-md
+  section: Deployments › Rolling Back a Deployment
+  query: If I scale a Kubernetes Deployment and later roll it back to an earlier revision, will the replica
+    count be rolled back too?
+  reference_answer: No. A new revision is created only when the Deployment's Pod template (.spec.template)
+    changes, such as its labels or container images. Scaling does not create a revision, so a rollback
+    restores only the Pod template.
+  difficulty: hard
+  tags:
+  - deployment
+  - rollback
+  - revision history
+  - scaling
+- id: gen-22
+  chunk_id: k8s-deployment-md:0
+  source_doc_id: k8s-deployment-md
+  section: Deployments
+  query: Should I edit or manage the ReplicaSets that a Kubernetes Deployment creates directly?
+  reference_answer: No. You should not manage ReplicaSets owned by a Deployment. You describe a desired
+    state in the Deployment, and it changes the actual state to match at a controlled rate. If your use
+    case isn't covered, consider opening an issue in the main Kubernetes repository.
+  difficulty: medium
+  tags:
+  - deployment
+  - replicaset
+  - desired state
+- id: gen-23
+  chunk_id: k8s-pods:2797
+  source_doc_id: k8s-pods
+  section: Pods › Using Pods › Workload resources for managing pods
+  query: If I need to run a stateful application on Kubernetes, should I create Pods myself or use something
+    else to manage them?
+  reference_answer: You usually don't need to create Pods directly, even singleton Pods. Create them through
+    workload resources such as Deployment or Job instead, and consider a StatefulSet if your Pods need
+    to track state.
+  difficulty: medium
+  tags:
+  - pods
+  - workload resources
+  - statefulset
+  - replication
+- id: gen-24
+  chunk_id: k8s-pods:14468
+  source_doc_id: k8s-pods
+  section: Pods › Resource requests and limits
+  query: What happens when a container goes over its memory limit versus its CPU limit in Kubernetes?
+  reference_answer: 'When a container exceeds its memory limit, the kernel enforces the limit with an
+    out-of-memory (OOM) kill. CPU limits are enforced by throttling instead: as the container approaches
+    its CPU limit, the kernel restricts its access to CPU.'
+  difficulty: medium
+  tags:
+  - resource limits
+  - OOM kill
+  - CPU throttling
+  - pods
+- id: gen-25
+  chunk_id: k8s-service:11788
+  source_doc_id: k8s-service
+  section: Service › Defining a Service › Application protocol
+  query: How do I tell Kubernetes that a Service port speaks WebSocket over TLS?
+  reference_answer: Set the Service port's `appProtocol` field to the Kubernetes-defined value `kubernetes.io/wss`,
+    which means WebSocket over TLS as described in RFC 6455. The field is a hint that implementations
+    can use to offer richer behavior for protocols they understand, and its value is mirrored to the corresponding
+    Endpoints and EndpointSlice objects.
+  difficulty: medium
+  tags:
+  - service
+  - appProtocol
+  - websocket
+  - ports
+- id: gen-26
+  chunk_id: k8s-service:9193
+  source_doc_id: k8s-service
+  section: Service › Defining a Service › Services without selectors › Accessing a Service without a selector
+  query: Why does kubectl port-forward fail on a Kubernetes Service that has no selector?
+  reference_answer: 'kubectl port-forward to a Service with no selector fails by design. This stops the
+    Kubernetes API server from being used as a proxy to endpoints the caller may not be authorized to
+    access. Other than that, a selectorless Service is accessed the same way as one with a selector: traffic
+    is routed to the endpoints defined in its EndpointSlice.'
+  difficulty: hard
+  tags:
+  - service
+  - selectorless service
+  - port-forward
+  - endpointslice
+- id: gen-27
+  chunk_id: prom-alerting-practices:2486
+  source_doc_id: prom-alerting-practices
+  section: Alerting › What to alert on › Metamonitoring
+  query: How should I alert on whether my Prometheus monitoring stack itself is working?
+  reference_answer: 'Have alerts that check that Prometheus servers, Alertmanagers, PushGateways and other
+    monitoring infrastructure are available and running correctly. Where possible, alert on symptoms rather
+    than causes: an end-to-end blackbox test that alerts get from PushGateway to Prometheus to Alertmanager
+    to email is better than separate alerts on each component. Adding external blackbox monitoring alongside
+    Prometheus''s whitebox monitoring catches problems that are otherwise invisible, and it is a fallback
+    if internal systems fail completely.'
+  difficulty: medium
+  tags:
+  - metamonitoring
+  - alerting
+  - blackbox monitoring
+  - prometheus
+- id: gen-28
+  chunk_id: prom-alerting-rules-md:3379
+  source_doc_id: prom-alerting-rules-md
+  section: Alerting rules › Inspecting alerts during runtime
+  query: How can I query in PromQL which Prometheus alerts are currently pending or firing?
+  reference_answer: Prometheus stores synthetic time series of the form ALERTS{alertname="<alert name>",
+    alertstate="<pending or firing>", <additional alert labels>} for pending and firing alerts. The sample
+    value is 1 while the alert is in that state, and the series is marked stale once it no longer is.
+    To check them by hand, the "Alerts" tab of the Prometheus instance shows the exact label sets for
+    which each alert is active.
+  difficulty: medium
+  tags:
+  - prometheus
+  - alerting
+  - ALERTS metric
+  - alert state
+- id: gen-29
+  chunk_id: prom-querying-basics:6609
+  source_doc_id: prom-querying-basics
+  section: Querying basics › Literals › Duration expressions
+  query: Why does my PromQL offset with an arithmetic duration like offset 1h / 2 not give a 30 minute
+    offset?
+  reference_answer: If you use a duration expression with `offset`, you have to wrap it in parentheses,
+    e.g. `offset (1h / 2)`. Without the parentheses, only the first duration value is used in the offset
+    calculation.
+  difficulty: hard
+  tags:
+  - promql
+  - offset
+  - duration expressions
+  - parentheses
+- id: gen-30
+  chunk_id: prom-querying-basics:13804
+  source_doc_id: prom-querying-basics
+  section: Querying basics › Time series selectors › Offset modifier
+  query: In PromQL, where do I put the offset when I want sum of http_requests_total from 5 minutes ago
+    — inside or outside the sum()?
+  reference_answer: 'The offset modifier must immediately follow the selector, so it goes inside: sum(http_requests_total{method="GET"}
+    offset 5m) is valid. Writing sum(http_requests_total{method="GET"}) offset 5m is invalid.'
+  difficulty: hard
+  tags:
+  - promql
+  - offset modifier
+  - time series selectors
+  - query syntax

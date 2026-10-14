@@ -1,15 +1,16 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | evaluate-pipeline | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | traces | pipeline run | pipeline status | pipeline index | pipeline release |
 pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
+import json
 import re
 from pathlib import Path
 
 import yaml
 
-from .chunk.chunks import DEFAULT_CHUNKING, STRATEGIES, Chunking, chunk_documents
+from .chunk.chunks import DEFAULT_CHUNKING, STRATEGIES, Chunking, chunk_documents, usable
 from .chunk.evaluate import GRID, benchmark, shape
 from .chunk.report import format_chunks, format_shapes
 from .chunk.report import write_report as write_chunking_report
@@ -20,6 +21,22 @@ from .embed.report import format_search
 from .embed.report import write_report as write_embeddings_report
 from .evaluation.calibrate import calibrate
 from .evaluation.calibration_report import write_report as write_calibration_report
+from .evaluation.dataset import (
+    DATASET_DIR,
+    GENERATED,
+    SCHEMA,
+    benchmark_index,
+    check,
+    json_schema,
+    load_dataset,
+    observe,
+)
+from .evaluation.dataset import load_runs as load_saved_runs
+from .evaluation.dataset_generate import DEFAULT_EFFORT as DATASET_EFFORT
+from .evaluation.dataset_generate import DEFAULT_N, DEFAULT_SEED, ClaudeCodeWriter, eligible, generate
+from .evaluation.dataset_generate import sample as sample_chunks
+from .evaluation.dataset_generate import save as save_generated
+from .evaluation.dataset_report import write_report as write_dataset_report
 from .evaluation.gates import compare as compare_runs
 from .evaluation.gates import load_gates
 from .evaluation.labels import LABELS, load_labels
@@ -54,7 +71,7 @@ from .observe.trace import TRACES, TraceLog, as_json, trace_answer
 from .observe.trace import render as render_trace
 from .pipeline import commands as pipeline_commands
 from .pipeline.releases import RELEASES, Releases
-from .pipeline.stages import Evaluation, Paths
+from .pipeline.stages import Evaluation, Paths, chunks_slug, load_chunks
 from .pipeline.store import Store
 from .retrieve.compare import compare, load_all
 from .retrieve.evaluate import evaluate_retrieval, load_benchmark
@@ -92,6 +109,7 @@ OBSERVABILITY_REPORT = Path("reports/observability.md")
 LATENCY_REPORT = Path("reports/latency-cost.md")
 LATENCY_DATA = Path("eval/latency.json")
 CANARY = Path("eval/canary.yaml")
+DATASET_REPORT = Path("reports/dataset.md")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -550,6 +568,27 @@ def main(argv: list[str] | None = None) -> None:
     calibrate_cmd.add_argument(
         "--run", help="the saved run to read the answers from (default: the one the labels name)"
     )
+    dataset_cmd = commands.add_parser(
+        "dataset",
+        help="the evaluation dataset in eval/dataset/: check it, generate a testset, write the report",
+    )
+    dataset_sub = dataset_cmd.add_subparsers(dest="dataset_command", required=True)
+    dataset_sub.add_parser(
+        "check", help="validate the records, the generated set and the audit; exit 1 on a problem"
+    )
+    generate_cmd = dataset_sub.add_parser(
+        "generate",
+        help=f"sample chunks and write {GENERATED} through claude -p; audit.yaml decides what enters",
+    )
+    generate_cmd.add_argument(
+        "--n", type=int, default=DEFAULT_N, help=f"chunks to sample (default {DEFAULT_N})"
+    )
+    generate_cmd.add_argument("--seed", type=int, default=DEFAULT_SEED, help=f"default {DEFAULT_SEED}")
+    generate_cmd.add_argument(
+        "--effort", default=DATASET_EFFORT, help=f"the model's effort (default {DATASET_EFFORT})"
+    )
+    generate_cmd.add_argument("--output", type=Path, default=GENERATED, help=f"default {GENERATED}")
+    dataset_sub.add_parser("report", help=f"check, then write {DATASET_REPORT} and {SCHEMA}")
     pipeline_cmd = commands.add_parser(
         "evaluate-pipeline",
         help="compare two saved runs metric by metric against the gates, write reports/evaluation.md; exit 1 when a critical gate fails",
@@ -827,7 +866,7 @@ def main(argv: list[str] | None = None) -> None:
                 if failed:
                     parser.exit(1)
             elif args.pipeline_command == "health":
-                from .pipeline.stages import Config, Paths, build_pipeline
+                from .pipeline.stages import Config, build_pipeline
 
                 found = checks(
                     INDEX_DIR,
@@ -839,6 +878,50 @@ def main(argv: list[str] | None = None) -> None:
                 print(format_checks(found))
                 if worst(found) == "fail":
                     parser.exit(1)
+        elif args.command == "dataset":
+            ds = load_dataset(DATASET_DIR)
+            chunks_file = CHUNKS_DIR / f"{ds.curated.chunking}.jsonl"
+            if not chunks_file.exists():
+                raise FileNotFoundError(f"{chunks_file} is missing; `chunk` writes it")
+            chunks = load_chunks(chunks_file)
+            if args.dataset_command == "generate":
+                if ds.curated.chunking != chunks_slug(DEFAULT_CHUNKING):
+                    raise ValueError(
+                        f"the records name chunking {ds.curated.chunking!r}; generate writes against the default, "
+                        f"{chunks_slug(DEFAULT_CHUNKING)!r}"
+                    )
+                used = {c for r in ds.records for c in r.contexts}
+                picked = sample_chunks(eligible(chunks, used), args.n, args.seed)
+                writer = ClaudeCodeWriter(effort=args.effort)
+                print(
+                    f"{len(picked)} chunks sampled from {len(eligible(chunks, used))} eligible; asking {writer.model}"
+                )
+                gen = generate(picked, writer)
+                save_generated(gen, ds.curated.chunking, writer, args.seed, args.output)
+                print(
+                    f"{len(gen.examples)} examples, {len(gen.skipped)} skipped, {gen.ms / 1000:.0f} s, "
+                    f"{gen.input_tokens:,} tokens in, {gen.output_tokens:,} out; wrote {args.output}"
+                )
+                print("next: decide each example in eval/dataset/audit.yaml, then `dataset report`")
+                return
+            docs = {d.source_id: d for d in usable(load_documents(DOCUMENTS))}
+            sources = {s.id for s in load_sources(SOURCES)}
+            problems = check(ds, chunks, docs, benchmark_index(Paths().benchmark_files), sources)
+            for p in problems:
+                print(f"problem: {p}")
+            print(
+                f"{len(ds.curated.records)} curated records, {len(ds.kept)} kept from the generated set, "
+                f"{len(ds.records)} in all; {'valid' if not problems else f'{len(problems)} problems'}"
+            )
+            if args.dataset_command == "report":
+                runs = load_saved_runs(RUNS_DIR)
+                write_dataset_report(
+                    ds, observe(ds.curated.records, runs), chunks, [r.name for r in runs], DATASET_REPORT
+                )
+                SCHEMA.write_text(json.dumps(json_schema(), indent=2, ensure_ascii=False) + "\n")
+                print(f"wrote {DATASET_REPORT} and {SCHEMA}")
+            if problems:
+                parser.exit(1)
         elif args.command == "calibrate":
             labelled_run = args.run or (yaml.safe_load(args.labels.read_text()) or {}).get("run", "")
             if not labelled_run:

@@ -1,0 +1,143 @@
+{
+  "description": "One question through the documentation QA system: what a right reply is, which passages it rests on, and the failure mode the example is in the set to catch. Contexts are chunk ids under the chunking named at the top of records.yaml.",
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "query": {
+      "title": "Query",
+      "type": "string"
+    },
+    "category": {
+      "enum": [
+        "fact-lookup",
+        "multi-hop",
+        "ambiguous",
+        "no-answer",
+        "stale",
+        "adversarial"
+      ],
+      "title": "Category",
+      "type": "string"
+    },
+    "expect": {
+      "enum": [
+        "answer",
+        "abstain",
+        "partial",
+        "clarify"
+      ],
+      "title": "Expect",
+      "type": "string"
+    },
+    "difficulty": {
+      "enum": [
+        "easy",
+        "medium",
+        "hard"
+      ],
+      "title": "Difficulty",
+      "type": "string"
+    },
+    "failure_mode": {
+      "$ref": "#/$defs/FailureMode"
+    },
+    "split": {
+      "enum": [
+        "dev",
+        "test"
+      ],
+      "title": "Split",
+      "type": "string"
+    },
+    "origin": {
+      "enum": [
+        "benchmark",
+        "traces",
+        "hand-written",
+        "generated"
+      ],
+      "title": "Origin",
+      "type": "string"
+    },
+    "source_doc_ids": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Source Doc Ids",
+      "type": "array"
+    },
+    "contexts": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Contexts",
+      "type": "array"
+    },
+    "reference_answer": {
+      "title": "Reference Answer",
+      "type": "string"
+    },
+    "tags": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "benchmark_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Benchmark Id"
+    },
+    "note": {
+      "default": "",
+      "title": "Note",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "query",
+    "category",
+    "expect",
+    "difficulty",
+    "failure_mode",
+    "split",
+    "origin",
+    "reference_answer"
+  ],
+  "title": "infra-docs-rag evaluation record",
+  "type": "object",
+  "$defs": {
+    "FailureMode": {
+      "type": "string",
+      "enum": [
+        "none",
+        "false-abstention",
+        "retrieval-miss",
+        "wrong-passage",
+        "uncited-claims",
+        "unverified-citation",
+        "answered-anyway",
+        "judge-misread",
+        "fabrication",
+        "stale-answer",
+        "wrong-reading",
+        "missing-hop"
+      ],
+      "description": "none: a clean example: the run should answer it from the passages, and did; false-abstention: an in-scope question that got the abstention sentence; retrieval-miss: no right passage among the ones the model read; wrong-passage: the answer cites a passage that is not a right one; uncited-claims: under 80% of the answer's claims carry a verified citation; unverified-citation: a typed citation that did not check out against its passage; answered-anyway: a question that should get the abstention sentence, answered from memory or a near miss; judge-misread: the judge reads a grounded answer as ungrounded or fabricated; fabrication: the answer states a fact no passage gives, or accepts a false premise; stale-answer: the answer presents a deprecated field, flag or method as current; wrong-reading: an ambiguous question answered under one reading without naming the others; missing-hop: a question whose answer spans two passages, answered from one"
+    }
+  }
+}
