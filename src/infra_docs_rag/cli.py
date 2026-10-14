@@ -925,11 +925,15 @@ def main(argv: list[str] | None = None) -> None:
                     parser.exit(1)
         elif args.command == "dataset":
             ds = load_dataset(DATASET_DIR)
-            chunks_file = CHUNKS_DIR / f"{ds.curated.chunking}.jsonl"
-            if not chunks_file.exists():
-                raise FileNotFoundError(f"{chunks_file} is missing; `chunk` writes it")
-            chunks = load_chunks(chunks_file)
+
+            def dataset_chunks():
+                chunks_file = CHUNKS_DIR / f"{ds.curated.chunking}.jsonl"
+                if not chunks_file.exists():
+                    raise FileNotFoundError(f"{chunks_file} is missing; `chunk` writes it")
+                return load_chunks(chunks_file)
+
             if args.dataset_command == "generate":
+                chunks = dataset_chunks()
                 if ds.curated.chunking != chunks_slug(DEFAULT_CHUNKING):
                     raise ValueError(
                         f"the records name chunking {ds.curated.chunking!r}; generate writes against the default, "
@@ -1037,6 +1041,7 @@ def main(argv: list[str] | None = None) -> None:
                 if any(g.blocks for g in gate_results):
                     parser.exit(1)
                 return
+            chunks = dataset_chunks()
             docs = {d.source_id: d for d in usable(load_documents(DOCUMENTS))}
             sources = {s.id for s in load_sources(SOURCES)}
             problems = check(ds, chunks, docs, benchmark_index(Paths().benchmark_files), sources)
