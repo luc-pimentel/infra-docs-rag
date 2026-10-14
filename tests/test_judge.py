@@ -21,6 +21,8 @@ def test_the_judge_reads_the_passages_the_question_and_the_marked_answer(context
     assert text.startswith("PASSAGES\n[1] Kubernetes › Doc › Rollback\nRoll back a Deployment")
     assert "\n[2] CNCF › Doc › Layers\nRollout and release layers" in text
     assert text.endswith(f"QUESTION\n{QUERY}\n\nANSWER\nUse undo.[1]")
+    # The judge reads each passage under the same heading the generator saw it under (docs/postmortem.md).
+    assert all(s.heading in text for s in context.sources)
     assert set(QUESTIONS) == {"grounded", "fabricated", "gap_named"}
     assert all(q["type"] == "noul" and set(q["criteria"]) == {"true", "false"} for q in QUESTIONS.values())
 

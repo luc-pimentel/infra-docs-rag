@@ -103,7 +103,10 @@ def test_the_configurations_are_the_released_pipeline_and_cuts_to_it():
     assert (
         CONFIGS["no rerank"][0].rerank is None and CONFIGS["minilm-l6 over 20"][0].rerank.model == "minilm-l6"
     )
-    assert CONFIGS["relevance floor 0.10"][0].rerank.min_relevance == 0.10 and CONFIGS["minilm-l6 + top 3"][0].k == 3
+    assert (
+        CONFIGS["relevance floor 0.10"][0].rerank.min_relevance == 0.10
+        and CONFIGS["minilm-l6 + top 3"][0].k == 3
+    )
     assert all(note for _, note in CONFIGS.values())
 
 
