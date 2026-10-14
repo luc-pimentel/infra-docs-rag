@@ -1,6 +1,6 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | traces | pipeline run | pipeline status | pipeline index | pipeline release |
 pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
@@ -36,13 +36,24 @@ from .evaluation.dataset_generate import DEFAULT_EFFORT as DATASET_EFFORT
 from .evaluation.dataset_generate import DEFAULT_N, DEFAULT_SEED, ClaudeCodeWriter, eligible, generate
 from .evaluation.dataset_generate import sample as sample_chunks
 from .evaluation.dataset_generate import save as save_generated
+from .evaluation.dataset_judge import load_reader
 from .evaluation.dataset_report import write_report as write_dataset_report
+from .evaluation.dataset_run import run_dataset, to_run
 from .evaluation.gates import compare as compare_runs
 from .evaluation.gates import load_gates
 from .evaluation.labels import LABELS, load_labels
 from .evaluation.metrics import metrics
+from .evaluation.metrics_report import write_report as write_metrics_report
 from .evaluation.report import write_report as write_evaluation_report
 from .evaluation.runs import RUNS_DIR, Run, from_grounding
+from .evaluation.slices import (
+    check_matrix,
+    check_slice_gates,
+    dataset_metrics,
+    diagnoses,
+    load_matrix,
+    slice_metrics,
+)
 from .evaluation.versions import DEFAULT_VERSION, Version
 from .evaluation.versions_report import write_report as write_versions_report
 from .generate.answer import answer as grounded_answer
@@ -110,6 +121,7 @@ LATENCY_REPORT = Path("reports/latency-cost.md")
 LATENCY_DATA = Path("eval/latency.json")
 CANARY = Path("eval/canary.yaml")
 DATASET_REPORT = Path("reports/dataset.md")
+METRICS_REPORT = Path("reports/metrics.md")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -589,6 +601,39 @@ def main(argv: list[str] | None = None) -> None:
     )
     generate_cmd.add_argument("--output", type=Path, default=GENERATED, help=f"default {GENERATED}")
     dataset_sub.add_parser("report", help=f"check, then write {DATASET_REPORT} and {SCHEMA}")
+    run_cmd = dataset_sub.add_parser(
+        "run",
+        help="answer every record end to end, judge and read each answer, save the run under eval/runs/",
+    )
+    run_cmd.add_argument(
+        "--generator",
+        choices=list(GENERATORS),
+        default=DEFAULT_GENERATOR,
+        help="; ".join(f"{name}: {how}" for name, how in GENERATORS.items())
+        + f" (default {DEFAULT_GENERATOR})",
+    )
+    run_cmd.add_argument("--effort", default=DEFAULT_EFFORT, help=f"default {DEFAULT_EFFORT}")
+    run_cmd.add_argument("--limit", type=int, help="only the first N records, to try the run cheaply")
+    run_cmd.add_argument("--no-judge", action="store_true", help="skip the jev readings (judge and reader)")
+    run_cmd.add_argument(
+        "--version",
+        default=None,
+        help="the pipeline version to run, from eval/versions.yaml (default: the current release)",
+    )
+    run_cmd.add_argument(
+        "--save", metavar="NAME", help="save as eval/runs/NAME/ (default dataset-<version>-<generator>)"
+    )
+    metrics_cmd = dataset_sub.add_parser(
+        "metrics",
+        help=f"the matrix, the per-slice scores and the gates over a saved dataset run → {METRICS_REPORT}",
+    )
+    metrics_cmd.add_argument("--run", help="the saved dataset run to read")
+    metrics_cmd.add_argument(
+        "--baseline", help="a saved dataset run the no-drop and no-rise gates compare against"
+    )
+    metrics_cmd.add_argument(
+        "--list-metrics", action="store_true", help="the metric names the matrix and gates can use"
+    )
     pipeline_cmd = commands.add_parser(
         "evaluate-pipeline",
         help="compare two saved runs metric by metric against the gates, write reports/evaluation.md; exit 1 when a critical gate fails",
@@ -880,11 +925,15 @@ def main(argv: list[str] | None = None) -> None:
                     parser.exit(1)
         elif args.command == "dataset":
             ds = load_dataset(DATASET_DIR)
-            chunks_file = CHUNKS_DIR / f"{ds.curated.chunking}.jsonl"
-            if not chunks_file.exists():
-                raise FileNotFoundError(f"{chunks_file} is missing; `chunk` writes it")
-            chunks = load_chunks(chunks_file)
+
+            def dataset_chunks():
+                chunks_file = CHUNKS_DIR / f"{ds.curated.chunking}.jsonl"
+                if not chunks_file.exists():
+                    raise FileNotFoundError(f"{chunks_file} is missing; `chunk` writes it")
+                return load_chunks(chunks_file)
+
             if args.dataset_command == "generate":
+                chunks = dataset_chunks()
                 if ds.curated.chunking != chunks_slug(DEFAULT_CHUNKING):
                     raise ValueError(
                         f"the records name chunking {ds.curated.chunking!r}; generate writes against the default, "
@@ -904,6 +953,95 @@ def main(argv: list[str] | None = None) -> None:
                 )
                 print("next: decide each example in eval/dataset/audit.yaml, then `dataset report`")
                 return
+            if args.dataset_command == "run":
+                version, pinned = pipeline_commands.resolve_version(args.version)
+                name = args.save or f"dataset-{version.name}-{args.generator}"
+                second = version.retrieval.rerank
+                index, index_id = pipeline_commands.index_for(version, pinned, INDEX_DIR)
+                gen = load_generator(args.generator, args.effort, version.prompt)
+                prompt = load_prompt(version.prompt)
+                lineage = pipeline_commands.lineage(version, index, index_id, prompt, gen.name, gen.model)
+                log = TraceLog(TRACES)
+                print(
+                    f"{len(ds.records)} records through {version.name} ({version.retrieval.label}) with {gen.model} via {gen.name}"
+                )
+                dg = run_dataset(
+                    ds.records,
+                    index,
+                    load_embedder(version.embedding),
+                    gen,
+                    load_reranker(second.model) if second is not None else None,
+                    retrieval=version.retrieval,
+                    limit=args.limit,
+                    judge=None if args.no_judge else load_judge(),
+                    reader=None if args.no_judge else load_reader(),
+                    tracer=lambda a, j: log.append(
+                        trace_answer(
+                            a, f"{version.name}:{name}", lineage, prompt.version(gen.name), j, gen.prices
+                        )
+                    ),
+                )
+                lineage = lineage.model_copy(update={"generator": dg.grounding.generator})
+                saved = to_run(dg, name, version.name, version.description, lineage)
+                print(
+                    f"saved the run to {saved.save(RUNS_DIR / saved.name)}/; next: `dataset metrics --run {saved.name}`"
+                )
+                return
+            if args.dataset_command == "metrics":
+                if args.list_metrics:
+                    sample_run = Run.load(RUNS_DIR / args.run) if args.run else None
+                    if sample_run is None:
+                        raise ValueError(
+                            "--list-metrics needs --run, a saved dataset run to read the names off"
+                        )
+                    for x in dataset_metrics(sample_run, ds.records).values():
+                        print(f"{x.name}: {x.description} ({x.better} is better)")
+                    return
+                if not args.run:
+                    raise ValueError(
+                        "--run names a saved dataset run under eval/runs/ (`dataset run` writes one)"
+                    )
+                candidate = Run.load(RUNS_DIR / args.run)
+                baseline = Run.load(RUNS_DIR / args.baseline) if args.baseline else None
+                known = {c.id for c in candidate.cases}
+                missing = [r.id for r in ds.records if r.id not in known]
+                if missing:
+                    print(
+                        f"warning: {len(missing)} records are not in the run ({', '.join(missing[:5])}{'…' if len(missing) > 5 else ''})"
+                    )
+                matrix_file = load_matrix()
+                cand_slices = slice_metrics(candidate, ds.records)
+                base_slices = slice_metrics(baseline, ds.records) if baseline else None
+                matrix_results = check_matrix(matrix_file.matrix, cand_slices)
+                gate_results = check_slice_gates(matrix_file.gates, cand_slices, base_slices)
+                write_metrics_report(
+                    candidate,
+                    ds.records,
+                    cand_slices,
+                    matrix_results,
+                    gate_results,
+                    diagnoses(candidate, ds.records),
+                    baseline,
+                    METRICS_REPORT,
+                )
+                for x in matrix_results:
+                    print(
+                        f"{'met ' if x.passed else ('MISS' if x.passed is False else '–   ')}  {x.entry.failure_mode}: {x.entry.metric} {x.detail}"
+                    )
+                for g in gate_results:
+                    status = (
+                        "skip"
+                        if g.skipped
+                        else "pass"
+                        if g.result.passed
+                        else ("FAIL" if g.gate.critical else "warn")
+                    )
+                    print(f"{status}  {g.gate.slice} {g.gate.metric}: {g.result.detail}")
+                print(f"wrote {METRICS_REPORT}")
+                if any(g.blocks for g in gate_results):
+                    parser.exit(1)
+                return
+            chunks = dataset_chunks()
             docs = {d.source_id: d for d in usable(load_documents(DOCUMENTS))}
             sources = {s.id for s in load_sources(SOURCES)}
             problems = check(ds, chunks, docs, benchmark_index(Paths().benchmark_files), sources)

@@ -119,7 +119,13 @@ Each stage ships into this repo, so the service grows with the checklist.
   a saved run got wrong and the rest written for the failures the runs cannot show yet or taken from
   what people asked the service; a model-written testset audited example by example; every run's
   verdict printed beside each record ([spec](eval/SPEC.md), [report](reports/dataset.md))
-- [ ] 14 · Metrics that match the failure modes
+- [x] 14 · Metrics that match the failure modes: a matrix from each failure mode to the metric that
+  measures it, its direction and threshold; a dataset run that answers every record through the
+  released pipeline and saves it like a benchmark run, with a second reading per answer (relevance,
+  agreement with the reference, a deprecation named, the readings of an ambiguous question named);
+  context recall and precision against the named passages; scores overall and per slice; every failed
+  record diagnosed as a retrieval or a generation problem; slice gates with blocker conditions, run as
+  the PR check ([matrix](eval/matrix.yaml), [report](reports/metrics.md))
 - [ ] 15 · LLM-as-judge calibrated against human labels, second round
 - [ ] 16 · Evals as regression tests for every change
 - [ ] 17 · Traces that explain why an eval fails
@@ -342,6 +348,17 @@ the gates.
   reason, and `dataset report` checks everything against the chunks, the sources and the benchmark
   labels, prints every run's verdict beside each record, and writes the
   [report](reports/dataset.md) and the JSON schema ([spec](eval/SPEC.md#6-the-dataset)).
+- **Metrics by failure mode:** [`eval/matrix.yaml`](eval/matrix.yaml) maps each failure mode to the
+  metric that measures it, the direction that is better and the threshold it is held to on the records
+  designed for that mode, and lists the slice gates a change has to clear. `dataset run` answers every
+  record through a pipeline version and saves the run under `eval/runs/` with the judge's three
+  probabilities and the dataset reader's four (relevant, agrees with the reference, deprecation named,
+  readings named) beside each answer; `dataset metrics` computes the stage 08 metrics plus context
+  recall and precision, relevance and agreement, and one signal per failure mode on the whole set and
+  on every slice (category, failure mode, difficulty, split, origin), diagnoses each failed record as a
+  retrieval or a generation problem, applies the matrix and the gates, and writes the
+  [report](reports/metrics.md); a failed critical gate exits 1, which is what the GitHub Actions check
+  runs on the committed baseline run ([spec](eval/SPEC.md#7-metrics-by-failure-mode)).
 
 ## Orchestration
 
@@ -480,6 +497,8 @@ uv run infra-docs-rag serve --generator claude-code              # the service o
 uv run infra-docs-rag dataset check                              # the evaluation dataset against the chunks, sources and benchmark; exit 1 on a problem
 uv run infra-docs-rag dataset generate --n 30 --seed 13          # a testset from sampled chunks through `claude -p`, for eval/dataset/audit.yaml to decide
 uv run infra-docs-rag dataset report                             # check, then reports/dataset.md and eval/dataset/schema.json
+uv run infra-docs-rag dataset run --generator claude-code        # every record through the release, judged and read; saves eval/runs/dataset-<version>-claude-code/
+uv run infra-docs-rag dataset metrics --run dataset-v3-budget-claude-code   # the matrix, per-slice scores and gates → reports/metrics.md; exit 1 on a failed critical gate
 uv run pytest
 ```
 
@@ -492,7 +511,7 @@ to `data/traces/traces.jsonl`, and the evidence to [`reports/ingestion.md`](repo
 [`reports/calibration.md`](reports/calibration.md), [`reports/evaluation.md`](reports/evaluation.md) and
 [`reports/orchestration.md`](reports/orchestration.md), [`reports/observability.md`](reports/observability.md),
 [`reports/latency-cost.md`](reports/latency-cost.md), [`reports/versions.md`](reports/versions.md) and
-[`reports/dataset.md`](reports/dataset.md); the generation cache to `data/cache/`; saved benchmark runs go to `eval/runs/` and
+[`reports/dataset.md`](reports/dataset.md) and [`reports/metrics.md`](reports/metrics.md); the generation cache to `data/cache/`; saved benchmark runs go to `eval/runs/` and
 releases to `eval/releases.yaml`, both committed.
 The first `embed` downloads its model from Hugging Face (about 130 MB for bge-small; `evaluate`
 needs all three, about 660 MB). The first `retrieve` or `search` downloads the default reranker

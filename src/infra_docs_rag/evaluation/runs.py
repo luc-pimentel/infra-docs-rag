@@ -70,6 +70,18 @@ class GeneratedRecord(BaseModel):
     refusal: str | None = None
 
 
+class ReadingRecord(BaseModel):
+    """The dataset reader's four probabilities (evaluation/dataset_judge.py); only a dataset run has them."""
+
+    relevant: float
+    reference_agrees: float
+    deprecation_named: float
+    readings_named: float
+    model: str
+    cost_usd: float
+    ms: float
+
+
 class JudgementRecord(BaseModel):
     grounded: float
     fabricated: float
@@ -107,6 +119,7 @@ class CaseRecord(BaseModel):
     retrieve_ms: float = 0.0
     generated: GeneratedRecord | None = None
     judgement: JudgementRecord | None = None
+    reading: ReadingRecord | None = None  # the dataset reader's probabilities, on a dataset run
 
     @property
     def held(self) -> bool:

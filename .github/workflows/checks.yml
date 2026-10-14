@@ -1,0 +1,31 @@
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: tesseract (the OCR fallback the PDF tests exercise)
+        run: sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr
+      - run: uv sync --frozen
+      - name: lint
+        run: uv run ruff check src tests && uv run ruff format --check src tests
+      - name: tests
+        run: uv run pytest -q
+      - name: evaluation gates on the saved runs
+        # No model call: the gates read the committed runs. The benchmark gates compare the two latest
+        # releases; the dataset gates read the baseline dataset run against the matrix.
+        run: |
+          uv run infra-docs-rag evaluate-pipeline --baseline v2-hybrid-rerank-claude-code --candidate v3-budget-claude-code
+          uv run infra-docs-rag dataset metrics --run dataset-v3-budget-claude-code
+      - name: no report drift
+        run: git diff --exit-code --stat -- reports/evaluation.md reports/metrics.md || (echo "regenerate the reports and commit them" && exit 1)
