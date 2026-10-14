@@ -89,6 +89,7 @@ class SentenceTransformerEmbedder:
         self.max_tokens = self.model.max_seq_length
         self.special_tokens = len(self.model.tokenizer("")["input_ids"])
         self.parameters = sum(p.numel() for p in self.model.parameters())
+        self.batch_size = 16  # texts encoded per forward pass; see reports/latency-cost.md for the sweep
 
     def embed_documents(self, texts: list[str]) -> np.ndarray:
         return self._encode(texts, prompt=None)
@@ -98,7 +99,11 @@ class SentenceTransformerEmbedder:
 
     def _encode(self, texts: list[str], prompt: str | None) -> np.ndarray:
         vectors = self.model.encode(
-            texts, prompt=prompt, batch_size=16, normalize_embeddings=True, show_progress_bar=False
+            texts,
+            prompt=prompt,
+            batch_size=self.batch_size,
+            normalize_embeddings=True,
+            show_progress_bar=False,
         )
         return np.asarray(vectors, dtype=np.float32)
 

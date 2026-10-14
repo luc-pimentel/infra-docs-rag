@@ -29,6 +29,7 @@ from .evaluation.runs import RUNS_DIR, Run, from_grounding
 from .evaluation.versions import DEFAULT_VERSION, Version
 from .generate.answer import answer as grounded_answer
 from .generate.answer import format_answer, marked
+from .generate.cache import CACHE, CachedGenerator, GenerationCache
 from .generate.evaluate import evaluate_grounding, load_grounding
 from .generate.generator import DEFAULT_EFFORT, GENERATORS, load_generator
 from .generate.generator import DEFAULT_MODEL as DEFAULT_GENERATOR
@@ -40,6 +41,10 @@ from .ingest.models import Document
 from .ingest.pipeline import run
 from .ingest.report import write_report
 from .ingest.sources import fetch, load_sources
+from .latency.configs import CONFIGS
+from .latency.profile import Workload, profile, questions_of, time_batches
+from .latency.report import load_workload, save_workload
+from .latency.report import write_report as write_latency_report
 from .observe.canary import load_canary, run_canary
 from .observe.health import checks, format_checks, worst
 from .observe.summary import format_summary, summarize
@@ -82,6 +87,8 @@ GROUNDING_REPORT = Path("reports/grounding.md")
 CALIBRATION_REPORT = Path("reports/calibration.md")
 EVALUATION_REPORT = Path("reports/evaluation.md")
 OBSERVABILITY_REPORT = Path("reports/observability.md")
+LATENCY_REPORT = Path("reports/latency-cost.md")
+LATENCY_DATA = Path("eval/latency.json")
 CANARY = Path("eval/canary.yaml")
 
 
@@ -185,9 +192,11 @@ def answer(
     show_prompt: bool,
     show_trace: bool = False,
     judge: bool = False,
+    use_cache: bool = True,
 ) -> None:
     """A grounded answer, or the prompt that would produce one, under a pipeline version. Every answer
-    leaves a trace in the log; --trace prints it, --judge adds the judge's reading to it."""
+    leaves a trace in the log; --trace prints it, --judge adds the judge's reading to it. The generation
+    cache answers a repeated question against the same passages without a call; --no-cache skips it."""
     r, index, index_id = retriever(version, pinned)
     prompt = load_prompt(version.prompt)
     retrieval = version.retrieval
@@ -198,6 +207,8 @@ def answer(
         print(render(r.retrieve(query, retrieval), query, prompt.text(generator)))
         return
     gen = load_generator(generator, effort, version.prompt)
+    if use_cache:
+        gen = CachedGenerator(gen, GenerationCache(CACHE), prompt.version(gen.name))
     a = grounded_answer(query, r, gen, retrieval)
     reading = None
     if judge and a.outcome == "answered":
@@ -211,6 +222,8 @@ def answer(
         print(render_trace(t))
         return
     print(format_answer(a))
+    if a.generated is not None and a.generated.cached:
+        print("(from the generation cache: no model call)")
     if reading is not None:
         print(
             f"judge: {reading.model} · grounded {reading.grounded:.2f} · fabricated {reading.fabricated:.2f} · gap named {reading.gap_named:.2f}"
@@ -226,6 +239,7 @@ def run_benchmark(
     limit: int | None,
     judge: bool,
     name: str,
+    use_cache: bool = False,
 ):
     """The grounding benchmark under a pipeline version, and the run to save, lineage included."""
     bench, extra = load_all(BENCHMARK, HYBRID_QUERIES)
@@ -234,6 +248,8 @@ def run_benchmark(
     index, index_id = pipeline_commands.index_for(version, pinned, INDEX_DIR)
     gen = load_generator(generator, effort, version.prompt)
     prompt = load_prompt(version.prompt)
+    if use_cache:
+        gen = CachedGenerator(gen, GenerationCache(CACHE), prompt.version(gen.name))
     lineage = pipeline_commands.lineage(version, index, index_id, prompt, gen.name, gen.model)
     log = TraceLog(TRACES)
     grounding = evaluate_grounding(
@@ -253,6 +269,8 @@ def run_benchmark(
         ),
     )
     lineage = lineage.model_copy(update={"generator": grounding.generator})
+    if isinstance(gen, CachedGenerator):
+        print(f"generation cache: {gen.hits} hits, {gen.misses} misses")
     return grounding, from_grounding(grounding, name, version.name, version.description, lineage)
 
 
@@ -368,6 +386,11 @@ def main(argv: list[str] | None = None) -> None:
         help="print the trace (every stage's input, output and time) instead of the answer",
     )
     answer_cmd.add_argument("--judge", action="store_true", help="have the judge read the answer too")
+    answer_cmd.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="call the model even when the generation cache has this answer",
+    )
     threshold = (
         f"default {DEFAULT_RETRIEVAL.min_score:.2f}"
         if DEFAULT_RETRIEVAL.min_score is not None
@@ -512,6 +535,11 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="save the run but leave reports/grounding.md alone",
     )
+    grounding_cmd.add_argument(
+        "--cache",
+        action="store_true",
+        help="answer from the generation cache where it can (a replay measures the cache; a measurement of the model should not use it)",
+    )
     calibrate_cmd = commands.add_parser(
         "calibrate",
         help="compare the judge and the mechanical checks to the hand labels, write reports/calibration.md",
@@ -530,6 +558,16 @@ def main(argv: list[str] | None = None) -> None:
         "--list-metrics", action="store_true", help="print every metric a gate can name"
     )
     pipeline_cmd.add_argument("--list-runs", action="store_true", help="print the saved runs")
+    latency_cmd = commands.add_parser(
+        "evaluate-latency",
+        help=f"profile every configuration on the benchmark workload (no model calls), write {LATENCY_DATA} and reports/latency-cost.md",
+    )
+    latency_cmd.add_argument(
+        "--from-saved",
+        action="store_true",
+        help=f"rewrite the report from {LATENCY_DATA} without profiling again",
+    )
+    latency_cmd.add_argument("--only", nargs="*", help="profile only these configurations (by name)")
     traces_cmd = commands.add_parser(
         "traces",
         help=f"summarize the trace log ({TRACES}); --last N or --id ID prints traces; --report writes reports/observability.md",
@@ -584,6 +622,59 @@ def main(argv: list[str] | None = None) -> None:
                 args.trace,
                 args.judge,
             )
+        elif args.command == "evaluate-latency":
+            if args.from_saved:
+                workload = load_workload(LATENCY_DATA)
+            else:
+                index = Index.load(INDEX_DIR / DEFAULT_MODEL)
+                embedder = load_embedder(DEFAULT_MODEL)
+                bench, extra = load_all(BENCHMARK, HYBRID_QUERIES)
+                adversarial = load_grounding(GROUNDING_QUESTIONS, {q.id for q in [*bench.queries, *extra]})
+                questions = questions_of(load_documents(DOCUMENTS), bench, extra, adversarial)
+                rerankers: dict[str, object] = {}
+                profiles = []
+                for name, (retrieval, note) in CONFIGS.items():
+                    if args.only and name not in args.only:
+                        continue
+                    reranker = None
+                    if retrieval.rerank is not None:
+                        reranker = rerankers.setdefault(
+                            retrieval.rerank.model, load_reranker(retrieval.rerank.model)
+                        )
+                    p = profile(name, retrieval, index, embedder, questions, reranker, note)
+                    print(
+                        f"{name}: retrieve p50 {p.retrieve_p50:,.0f} ms, right retrieved {p.right_retrieved}/{len(p.labelled)}, "
+                        f"MRR {p.mrr:.2f}, {p.passage_tokens_p50:,.0f} passage tokens, {p.false_abstentions} false abstentions"
+                    )
+                    profiles.append(p)
+                batches = []
+                if not (args.only and LATENCY_DATA.exists()):
+                    batches = time_batches(embedder, [c.embedded for c in index.chunks])
+                    for b in batches:
+                        print(f"batch {b.batch_size}: {b.chunks} chunks in {b.seconds:.1f}s")
+                from .embed.evaluate import machine
+
+                workload = Workload(profiles, batches, machine())
+                if args.only and LATENCY_DATA.exists():  # add to what is saved, in the configuration order
+                    earlier = load_workload(LATENCY_DATA)
+                    fresh = {p.name: p for p in profiles}
+                    kept = {p.name: p for p in earlier.profiles}
+                    kept.update(fresh)
+                    ordered = [kept[n] for n in CONFIGS if n in kept] + [
+                        p for n, p in kept.items() if n not in CONFIGS
+                    ]
+                    workload = Workload(
+                        ordered, earlier.batches or batches, earlier.machine or workload.machine
+                    )
+                save_workload(workload, LATENCY_DATA)
+                print(f"saved {LATENCY_DATA}")
+            runs = (
+                {d.name: Run.load(d) for d in sorted(RUNS_DIR.iterdir()) if (d / "manifest.json").exists()}
+                if RUNS_DIR.exists()
+                else {}
+            )
+            write_latency_report(workload, runs, LATENCY_REPORT)
+            print(f"wrote {LATENCY_REPORT}")
         elif args.command == "traces":
             log = TraceLog(TRACES)
             if args.id:
@@ -656,7 +747,7 @@ def main(argv: list[str] | None = None) -> None:
             version, pinned = pipeline_commands.resolve_version(args.version)
             name = args.save or f"{version.name}-{args.generator}"
             grounding, saved = run_benchmark(
-                version, pinned, args.generator, args.effort, args.limit, not args.no_judge, name
+                version, pinned, args.generator, args.effort, args.limit, not args.no_judge, name, args.cache
             )
             print(f"saved the run to {saved.save(RUNS_DIR / saved.name)}/")
             if not args.no_report:

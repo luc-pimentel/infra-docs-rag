@@ -13,11 +13,11 @@ from pathlib import Path
 
 from infra_docs_rag.embed.index import Index
 from infra_docs_rag.evaluation.runs import Run
+from infra_docs_rag.generate.answer import is_gap
+from infra_docs_rag.generate.evaluate import CLAIM_FLOOR
 from infra_docs_rag.generate.prompts import load_prompt
 from infra_docs_rag.pipeline.manifest import PipelineManifest
 from infra_docs_rag.pipeline.store import Store
-from infra_docs_rag.generate.answer import is_gap
-from infra_docs_rag.generate.evaluate import CLAIM_FLOOR
 from infra_docs_rag.retrieve.retriever import locate
 
 
@@ -55,7 +55,11 @@ def migrate(directory: Path, chunks: dict) -> None:
         run.manifest.lineage = lineage(run)
         print(
             f"{directory.name}: lineage "
-            + (f"filled, index {run.manifest.lineage.index_version}" if run.manifest.lineage else "left empty: the current index is not the one the run read")
+            + (
+                f"filled, index {run.manifest.lineage.index_version}"
+                if run.manifest.lineage
+                else "left empty: the current index is not the one the run read"
+            )
         )
     for c in run.cases:
         for s in c.sources:
