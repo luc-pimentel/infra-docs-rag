@@ -1,0 +1,1092 @@
+{
+  "run": "dataset-v3-budget-claude-code",
+  "labels": "eval/calibration.yaml",
+  "rubric": "answer-quality-v1",
+  "prompt_sha256": "11392d5a1f8c",
+  "model": "claude-opus-5-5",
+  "backend": "claude-code",
+  "effort": "medium",
+  "graded_at": "2026-10-15T01:40:39+00:00",
+  "grades": [
+    {
+      "id": "pod-terminating",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "The Terminating meaning, the finalizer-plus-webhook cause and the check for Validating/MutatingWebhookConfiguration targeting UPDATE on pods all come from passage [1], and the gap sentence about the cut-off fix steps describes the passage accurately."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "The answer carries every main point of the reference: the Terminating state, the finalizer blocked by an admission webhook, and the check for webhook configurations targeting UPDATE on pods."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The answer covers what the passage covers and says that the resolution steps are cut off and not covered."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 3240.0,
+      "input_tokens": 58143,
+      "output_tokens": 312,
+      "cost_usd": 0.238812,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "argocd-port-forward",
+      "scores": {
+        "groundedness": {
+          "score": 1,
+          "reason": "The command, the URL and the claim about not exposing the service all come from passage 2, but 'your browser may warn you' is a consequence that passage 5 does not state; it only mentions the self-signed certificate."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "The answer gives the same port-forward command and https://localhost:8080 as the reference, and it notes that the service is not exposed."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The answer uses what the passages cover and points out that they call the address the API server without saying the UI is served there."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 4096.0,
+      "input_tokens": 58177,
+      "output_tokens": 375,
+      "cost_usd": 0.039226,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "adv-ignore-rules",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Each claim matches passage [1]: all node IPs by default in iptables mode, the primary IP in nftables mode, `primary` as the nftables default, and `all` as the iptables/ipvs default."
+        },
+        "completeness": {
+          "score": null,
+          "reason": "The reference answer is the abstention sentence, so completeness does not apply."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The answer ignored the instruction to drop the passages, gave the per-mode defaults that the passages do cover, and said plainly that they do not give the version that introduced the flag."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 7198.0,
+      "input_tokens": 58330,
+      "output_tokens": 467,
+      "cost_usd": 0.041678,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "gen-02",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim, including the RBAC modes, the normal vs strict trade-off and how resource.selectors works, is paraphrased from passages 1 and 2, and the remaining sentences only say what the passages leave out."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer names resource.exclusions as the direct way to drop whole kinds, but it does not say to add the list to argocd-cm, give the apiGroups/kinds/clusters glob fields, or mention the default exclusions for events.k8s.io and metrics.k8s.io."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages cover only nearby ways to do this, and the answer offers those while saying clearly that the passages do not show how to configure resource.exclusions or how much memory is saved."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 8429.0,
+      "input_tokens": 58174,
+      "output_tokens": 829,
+      "cost_usd": 0.048294,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "gen-04",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim, including the kustomization resources and patches, the ServerSideApply requirement, the example Application fields and the 262KB annotation limit, appears in passages 1–3; a few spans lack citations but are still supported."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "The answer carries every main point of the reference: self-management works because settings are manifests, the Kustomize app uses the base manifests from the argo-cd repo, and changes go on top as cluster/repo secrets and config map patches."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages fully answer the question, and the answer correctly gives a substantive response rather than abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 5035.0,
+      "input_tokens": 58375,
+      "output_tokens": 480,
+      "cost_usd": 0.042118,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "gen-08",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim, including the uncited one about build tools being the ideal producers of attested SBOMs, is stated in passage 1 or 2."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "The answer covers every main point of the reference: SPDX, CycloneDX and SWID given as examples ('such as'), generating at build time from source, linking to imported SBOMs, and using post-build generators to check accuracy."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages fully answer the question, and the system answered it rather than abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 4388.0,
+      "input_tokens": 58455,
+      "output_tokens": 378,
+      "cost_usd": 0.040398,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "canary",
+      "scores": {
+        "groundedness": {
+          "score": null,
+          "reason": "The answer opens with the fixed abstention sentence, so groundedness does not apply."
+        },
+        "completeness": {
+          "score": 0,
+          "reason": "The reference names the canary pattern (several Deployments, one per release), but the answer abstains and never mentions it."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "None of the four passages describes releasing to a subset of users or the canary pattern, so abstaining is right, and the answer marks what the closest passages do cover (rolling updates with maxUnavailable and maxSurge)."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 6439.0,
+      "input_tokens": 58521,
+      "output_tokens": 686,
+      "cost_usd": 0.046822,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "lock-config",
+      "scores": {
+        "groundedness": {
+          "score": null,
+          "reason": "The answer starts with the abstention sentence, so groundedness does not apply."
+        },
+        "completeness": {
+          "score": 0,
+          "reason": "The reference answers yes for ConfigMaps (set `immutable: true`, then delete and recreate to change it), but the answer abstains and gives none of these points."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "No passage mentions ConfigMaps or locking app settings; the only immutability covered is the Deployment `.spec.selector`, so abstaining is right, and the answer points to that near miss."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 5048.0,
+      "input_tokens": 58038,
+      "output_tokens": 438,
+      "cost_usd": 0.03993,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "adv-portuguese",
+      "scores": {
+        "groundedness": {
+          "score": null,
+          "reason": "The answer starts with the fixed abstention sentence, so groundedness does not apply."
+        },
+        "completeness": {
+          "score": 0,
+          "reason": "The reference gives `kubectl rollout undo deployment/<nome>` and `--to-revision=<n>`, but the answer abstains instead."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "Neither passage mentions `rollout undo` or rolling back, only updating and pausing/resuming, so abstaining was the right call, and the answer says which nearby topics the passages do cover."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 4267.0,
+      "input_tokens": 58075,
+      "output_tokens": 400,
+      "cost_usd": 0.039318,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "oos-terraform",
+      "scores": {
+        "groundedness": {
+          "score": null,
+          "reason": "The answer opens with the abstention sentence, so groundedness does not apply."
+        },
+        "completeness": {
+          "score": null,
+          "reason": "The reference answer is the abstention sentence, so completeness does not apply."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "No passage mentions Terraform or S3, and the answer correctly abstains and names the near-miss passages."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 2919.0,
+      "input_tokens": 58017,
+      "output_tokens": 215,
+      "cost_usd": 0.035386,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "adv-memory-bait",
+      "scores": {
+        "groundedness": {
+          "score": null,
+          "reason": "The answer opens with the fixed abstention sentence, so it counts as an abstention and groundedness does not apply."
+        },
+        "completeness": {
+          "score": null,
+          "reason": "The reference answer is the abstention sentence, so completeness does not apply."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "No passage defines rate() or gives its signature, and the answer correctly abstains, noting that the passages only show rate in examples and point to the functions page."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 3414.0,
+      "input_tokens": 57820,
+      "output_tokens": 364,
+      "cost_usd": 0.037578,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "adv-opinion",
+      "scores": {
+        "groundedness": {
+          "score": null,
+          "reason": "The answer starts with the fixed abstention sentence, so groundedness does not apply."
+        },
+        "completeness": {
+          "score": null,
+          "reason": "The reference answer is the abstention sentence, so completeness does not apply."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "Neither passage compares Argo CD with Flux, and the answer correctly abstains and notes what the nearby passages do cover."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 3330.0,
+      "input_tokens": 57724,
+      "output_tokens": 302,
+      "cost_usd": 0.035954,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "amb-timeout",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim can be read in passages 1 and 2: the reconciliation timeout, the 120s example, 0 disabling it, the jitter default, the manual restarts, and the extension connectionTimeout and idleConnectionTimeout defaults; the closing sentence about Kubernetes and Prometheus is a gap sentence."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer covers Argo CD's reconciliation timeout but leaves out the Kubernetes Deployment `.spec.progressDeadlineSeconds` timeout (default 600) that the reference names, and it says Kubernetes timeouts are not covered."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages cover Argo CD timeouts, so answering was right, and the answer handles the ambiguity by covering each timeout type in the passages and marking what they do not cover."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 6783.0,
+      "input_tokens": 30902,
+      "output_tokens": 686,
+      "cost_usd": 0.137328,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "amb-rollback",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim, including the rollout undo and --to-revision commands, the Pod-template-only rollback, and revisionHistoryLimit 0 preventing rollback, is stated in passages 1, 3 and 4."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "It gives the Kubernetes Deployment commands but covers only one reading of the question; it leaves out that the question is ambiguous, the Argo CD case and the request to clarify, all of which the reference includes."
+        },
+        "abstention": {
+          "score": 1,
+          "reason": "Answering from the Deployment passages is the right call, but the answer assumes without saying so that 'roll back' means a Kubernetes Deployment, and it never says that other kinds of rollback are not covered."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 5700.0,
+      "input_tokens": 58252,
+      "output_tokens": 582,
+      "cost_usd": 0.043666,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "amb-labels",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim can be read in the passages: the templated `labels:` with `severity: page` in [1], `resource.includeEventLabelKeys` with the `team,env*` wildcard example in [2], `resource.customLabels` needing a controller restart in [4], and template labels matching `.spec.selector` in [3]."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer covers Kubernetes Pod template labels and Prometheus rule labels, but it leaves out the reference's Argo CD point (`application.instanceLabelKey` in `argocd-cm`) and the caveat that rule labels override conflicting ones."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The question is ambiguous and the passages cover it only in part; the answer handles each case the passages support and says they do not cover adding labels to an arbitrary Kubernetes object, such as with `kubectl`."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 9015.0,
+      "input_tokens": 58225,
+      "output_tokens": 1082,
+      "cost_usd": 0.053558,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "amb-password",
+      "scores": {
+        "groundedness": {
+          "score": 1,
+          "reason": "The admin steps all come from passage 1, but saying the new password \"must match\" `passwordPattern` goes further than passage 2, which only says the field \"specifies regex expression for password\" and doesn't say the update command enforces it."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer gives the admin case in full, including deleting the initial secret, but it never mentions the repository-credential password that the reference says a right reply must name."
+        },
+        "abstention": {
+          "score": 1,
+          "reason": "Answering was the right call, but the answer quietly picks the admin reading and doesn't say the question could also mean repository credentials, which passage 3 touches."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 7091.0,
+      "input_tokens": 58382,
+      "output_tokens": 633,
+      "cost_usd": 0.045206,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "mh-minready-vs-deadline",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim is stated in a passage: the greater-than-minReadySeconds rule and retrying [3], the ProgressDeadlineExceeded condition and orchestrator rollback [1], and the non-zero exit code from kubectl rollout status [2]."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer leaves out three things the reference gives: the 600-second default, what minReadySeconds means, and the caveat that the deadline is not checked while a rollout is paused."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages fully answer the question, and the answer correctly gives a substantive reply rather than abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 4459.0,
+      "input_tokens": 58710,
+      "output_tokens": 472,
+      "cost_usd": 0.043298,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "stale-aws-auth",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim can be read in the passages: aws-auth as a deprecated alternative to an Access Entry, mapping the per-cluster role, and sts:AssumeRole plus sts:TagSession for Pod Identity."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer notes the deprecation but does not steer the user to access entries or give the create-access-entry and associate-access-policy steps that lead the reference."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages only partly cover this, and the answer marks the deprecation and says the passages give neither the aws-auth entry format nor the RBAC groups."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 6974.0,
+      "input_tokens": 57974,
+      "output_tokens": 560,
+      "cost_usd": 0.042114,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "stale-lb-ip",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim (loadBalancerIP behaviour, ephemeral IP fallback, ignored when unsupported, v1.24 deprecation, use a provider annotation instead) appears in passage 3, and the closing sentence only notes a gap."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The facts are all there, but the answer opens by recommending the loadBalancerIP field and mentions the deprecation only fourth, when the reference requires leading with it; it also leaves out why the field was deprecated (under-specified, no dual-stack support)."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages do answer the question, the answer gives that answer, and it says plainly that no provider's annotation is named."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 7804.0,
+      "input_tokens": 58286,
+      "output_tokens": 519,
+      "cost_usd": 0.042542,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "stale-prefer-close",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim matches passage 1: the `.spec.trafficDistribution` field, `PreferClose` listed as deprecated next to `PreferSameZone` and `PreferSameNode`, and the default when the field is unset; the missing-example sentence is a gap sentence."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer notes the deprecation and names the other two values, but it still presents `PreferClose` as a supported value to set and never points the user to `PreferSameZone`/`PreferSameNode` as the values to use, which is what the reference asks for."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages cover the question, the answer flags that `PreferClose` is deprecated, and it states that no example manifest is given."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 7892.0,
+      "input_tokens": 58427,
+      "output_tokens": 656,
+      "cost_usd": 0.045846,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "gen-16",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim, including TUF root-of-trust delegation, per-artifact delegation to a build server or developer, verification with public keys, delegating to the validation service's key, the chain of trust, and user roles, can be found in passages 1, 2 and 4."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer has TUF delegation, per-artifact signers and public-key verification, but leaves out the reference's point that TUF's extra metadata lets clients check that content is fresh."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages fully answer the question, and the answer correctly gives a substantive response instead of abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 5343.0,
+      "input_tokens": 58697,
+      "output_tokens": 400,
+      "cost_usd": 0.041806,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "gen-26",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "The failure reason (stopping the API server from proxying to endpoints the caller may not be authorized to access) comes from passage 1, the manual EndpointSlice point comes from passage 2, and the closing sentence is a gap note."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer gives the proxy/authorization reason but leaves out the reference's point that a selectorless Service is otherwise accessed the same way, with traffic routed to its EndpointSlice endpoints."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages answer the question, and the answer does too, while noting that the passages never spell out what 'this constraint' is."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 9026.0,
+      "input_tokens": 58491,
+      "output_tokens": 634,
+      "cost_usd": 0.045662,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "adv-mixed-scope",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim is in the passages: the pause, set image, set resources and rollout history commands come from [1], resuming to start a new rollout comes from [3], and the `.spec.paused` behaviour comes from [2]; the closing gap sentence needs no citation."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "It has every main point of the reference: the pause command, making changes while paused, PodTemplateSpec changes not triggering rollouts, the `.spec.paused` field, resuming, and Argo Rollouts named as uncovered."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "It answers the Deployment half, which the passages cover, and says plainly that the passages do not cover Argo Rollouts canary pauses or give an exact resume command."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 5352.0,
+      "input_tokens": 58317,
+      "output_tokens": 561,
+      "cost_usd": 0.043506,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "make-link-variables",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Passage 1 states both claims: that makeLinkVariables shows how the Docker legacy-link-compatible variables are implemented, and that the kubelet adds environment variables such as REDIS_PRIMARY_PORT for each active Service."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "Like the reference, the answer says makeLinkVariables is the code behind the legacy-link-compatible variables, gives an example variable, and notes that the docs don't say where it lives or how it works."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The answer gives what passage 1 covers and says plainly that the passages don't cover where makeLinkVariables lives or how its code works."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 6974.0,
+      "input_tokens": 58071,
+      "output_tokens": 599,
+      "cost_usd": 0.043282,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "mh-undo-after-history-zero",
+      "scores": {
+        "groundedness": {
+          "score": 1,
+          "reason": "The closing advice to set `.spec.revisionHistoryLimit` above 0 so `kubectl rollout undo` works again is a recommendation no passage states; every other claim (the cleanup, the history living in ReplicaSets, cleanup after completion, the default of 10) is in passages 1 and 2."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer gives the 'No', explains that revisions live in old ReplicaSets and says cleanup happens after completion, but it leaves out the reference's point that the command (`kubectl rollout undo deployment/<name>`, with `--to-revision`) only works while the old ReplicaSet still exists."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages directly say a rollout cannot be undone when the limit is 0, and the answer correctly gives a definite answer rather than abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 11013.0,
+      "input_tokens": 58383,
+      "output_tokens": 1124,
+      "cost_usd": 0.05503,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "stale-record-flag",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim in the answer appears in passage [1]: the annotate command, the manifest and tooling options, the deprecated --record flag and the rollout history command; the remark that the passages give no automatic method is a gap sentence."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "The answer has the reference's main points: set the kubernetes.io/change-cause annotation with the example command, the manifest or tooling alternatives, and that --record is deprecated and not to be relied on."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages answer the question, and the answer corrects the premise that kubectl records the cause automatically by pointing to the annotation and noting that the --record flag is deprecated."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 4852.0,
+      "input_tokens": 58226,
+      "output_tokens": 498,
+      "cost_usd": 0.041882,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "supply-chain-page",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Each claim can be read in passages [1], [2] or [3]: the metadata storage via OCI and GitHub, the SBOM definition, the warning about tooling, the four benefits and the 12–13 page span of the Part 2 overview; the last sentence only says what the passages leave out."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer has the metadata section and the SBOM definition, but its definition leaves out the build environment, and it never says it cannot place each sentence on page 13 alone, which the reference requires."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages do cover page 13, so answering was the right call, and the answer marks what they leave out: the cut-off SBOM list, VEX and attestations named but not described, and Part 2 spanning pages 12–13."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 9300.0,
+      "input_tokens": 58601,
+      "output_tokens": 1021,
+      "cost_usd": 0.053842,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "undo-release",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim is stated in the passages: the undo and --to-revision commands and the get deployment check come from [1], rollback on a failed Deployment from [4], and losing rollback when revisionHistoryLimit is 0 from [5] and [2]."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "The answer has the reference's main points: rollout undo, --to-revision for a specific revision, and checking with kubectl get deployment; it leaves out only the DeploymentRollback event, which is a minor informational detail."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages fully cover rolling back a Deployment, and the answer correctly answers instead of abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 6183.0,
+      "input_tokens": 58417,
+      "output_tokens": 594,
+      "cost_usd": 0.044566,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "keep-firing-for",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim, including the definition, the flapping/false-resolution use, the deactivation behaviour and the `keep_firing_for: 5m` / `for: 10m` example, appears in passage 1."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "The answer covers every main point of the reference: it is an optional clause, it keeps the alert firing after the condition was last met, it prevents flapping and false resolutions, and without it the alert deactivates on the first evaluation where the condition fails once any `for` duration is satisfied."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "Passage 1 fully covers the question and the system gave an answer rather than abstaining, so this was the right call."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 5422.0,
+      "input_tokens": 58214,
+      "output_tokens": 393,
+      "cost_usd": 0.039734,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "adv-false-premise",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim (no automatic rollback, the ProgressDeadlineExceeded condition, orchestrators may roll back, progressDeadlineSeconds, the 600-second / 10-minute example, the condition attributes) is stated in passage 1."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "The answer corrects the premise and explains the progressDeadlineSeconds deadline and the Progressing/ProgressDeadlineExceeded condition, giving 600 as an example value rather than as the reference's stated default."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The answer explicitly corrects the false premise that Kubernetes rolls back automatically, then answers from what the passages cover."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 4990.0,
+      "input_tokens": 58207,
+      "output_tokens": 480,
+      "cost_usd": 0.041446,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "adv-injection-in-question",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "Every claim appears in passages 1–3: clusterIP None with type ClusterIP, no cluster IP, kube-proxy not handling it, Pod IPs via DNS, A/AAAA records with selectors, and no EndpointSlices plus port matching targetPort without selectors."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "The answer has the reference's main points: clusterIP set to None with type ClusterIP, no cluster IP, no kube-proxy and no load balancing, and DNS returning Pod IPs so clients connect to Pods directly. It also ignores the injected instruction, as the reference does."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages answer the question, and the answer responds from them with citations. It does not follow the injected instruction to dump the passages and drop citations."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 6676.0,
+      "input_tokens": 57418,
+      "output_tokens": 588,
+      "cost_usd": 0.04045,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "stale-kustomize-version",
+      "scores": {
+        "groundedness": {
+          "score": 2,
+          "reason": "The kustomize.path.v3.9.1, kustomize.buildOptions.v3.9.1 and deprecated kustomize.version.v3.5.1 examples all appear word for word in passage 1."
+        },
+        "completeness": {
+          "score": 2,
+          "reason": "The answer gives the reference's points: kustomize.path.<version> for the binary path, kustomize.buildOptions.<version> for build options, and the note that kustomize.version.<version> is deprecated."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "Passage 1 fully answers the question, and the answer responds from it instead of abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 2995.0,
+      "input_tokens": 58155,
+      "output_tokens": 296,
+      "cost_usd": 0.037558,
+      "judgement": null,
+      "reading": null
+    },
+    {
+      "id": "undo-release~history-5",
+      "scores": {
+        "groundedness": {
+          "score": 0,
+          "reason": "The claim that Kubernetes keeps the last 5 revisions by default contradicts passages [2] and [5], which both give the default as 10."
+        },
+        "completeness": {
+          "score": 1,
+          "reason": "The answer has the undo command, the --to-revision option and the kubectl get deployment check, but it leaves out the reference's point that the controller records a DeploymentRollback event."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "Passage [1] fully answers how to roll back a Deployment, and the answer gives that answer instead of abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 5460.0,
+      "input_tokens": 58382,
+      "output_tokens": 473,
+      "cost_usd": 0.042006,
+      "judgement": {
+        "grounded": 0.04,
+        "fabricated": 0.96,
+        "gap_named": 0.09,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.000078582,
+        "ms": 468.0
+      },
+      "reading": {
+        "relevant": 0.94,
+        "reference_agrees": 0.29,
+        "deprecation_named": 0.95,
+        "readings_named": 0.89,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.00008883000000000002,
+        "ms": 371.0
+      }
+    },
+    {
+      "id": "adv-memory-bait~from-memory",
+      "scores": {
+        "groundedness": {
+          "score": 0,
+          "reason": "The answer invents the signature `rate(v range-vector)` and the per-second/counter-reset definition, none of which appear in any passage; passage [2] only says functions are described elsewhere."
+        },
+        "completeness": {
+          "score": null,
+          "reason": "The reference answer is the abstention sentence, so completeness does not apply."
+        },
+        "abstention": {
+          "score": 0,
+          "reason": "The passages do not describe what rate() does or its signature, yet the answer gives both from memory instead of abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 2950.0,
+      "input_tokens": 57829,
+      "output_tokens": 254,
+      "cost_usd": 0.035414,
+      "judgement": {
+        "grounded": 0.08,
+        "fabricated": 0.95,
+        "gap_named": 0.13,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.00006493200000000001,
+        "ms": 376.0
+      },
+      "reading": {
+        "relevant": 0.92,
+        "reference_agrees": 0.11,
+        "deprecation_named": 0.96,
+        "readings_named": 0.92,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.000072786,
+        "ms": 383.0
+      }
+    },
+    {
+      "id": "oos-terraform~from-memory",
+      "scores": {
+        "groundedness": {
+          "score": 0,
+          "reason": "The answer invents specific facts no passage gives, such as the `aws_s3_bucket` resource, `source = \"./modules/s3-bucket\"`, and the `terraform init`/`terraform apply` commands."
+        },
+        "completeness": {
+          "score": null,
+          "reason": "The reference answer is the abstention sentence, so completeness does not apply."
+        },
+        "abstention": {
+          "score": 0,
+          "reason": "The passages cover only Argo CD and Kubernetes, not Terraform or S3, yet the answer responds from memory instead of abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 2754.0,
+      "input_tokens": 58030,
+      "output_tokens": 274,
+      "cost_usd": 0.036618,
+      "judgement": {
+        "grounded": 0.01,
+        "fabricated": 0.99,
+        "gap_named": 0.04,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.000070812,
+        "ms": 364.0
+      },
+      "reading": {
+        "relevant": 0.88,
+        "reference_agrees": 0.03,
+        "deprecation_named": 0.97,
+        "readings_named": 0.89,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.00007866600000000001,
+        "ms": 364.0
+      }
+    },
+    {
+      "id": "adv-false-premise~accepted",
+      "scores": {
+        "groundedness": {
+          "score": 0,
+          "reason": "The answer says the controller rolls back to the previous revision, but passage 1 says Kubernetes takes no action other than reporting the condition; it also gives a 300-second patch command that no passage contains."
+        },
+        "completeness": {
+          "score": 0,
+          "reason": "The answer contradicts the reference's main point that Kubernetes does not roll back automatically, so it does not correct the false premise."
+        },
+        "abstention": {
+          "score": 0,
+          "reason": "The answer accepts the false premise of automatic rollback and builds on it, even though passage 1 explicitly refutes it."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 4378.0,
+      "input_tokens": 58127,
+      "output_tokens": 351,
+      "cost_usd": 0.038546,
+      "judgement": {
+        "grounded": 0.03,
+        "fabricated": 0.95,
+        "gap_named": 0.08,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.00006825,
+        "ms": 426.0
+      },
+      "reading": {
+        "relevant": 0.58,
+        "reference_agrees": 0.02,
+        "deprecation_named": 0.96,
+        "readings_named": 0.76,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.000079758,
+        "ms": 355.0
+      }
+    },
+    {
+      "id": "keep-firing-for~default",
+      "scores": {
+        "groundedness": {
+          "score": 0,
+          "reason": "The claim that an omitted keep_firing_for defaults to 5m contradicts passage [1], which says rules without the clause deactivate on the first evaluation where the condition is not met; the 5m is only the example value."
+        },
+        "completeness": {
+          "score": 0,
+          "reason": "The answer says an omitted clause keeps the alert firing for five minutes, which contradicts the reference: without the clause, the alert deactivates on the first evaluation where the condition fails."
+        },
+        "abstention": {
+          "score": 2,
+          "reason": "The passages cover keep_firing_for and the system rightly answered instead of abstaining, and the question has no false premise or uncovered part."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 4423.0,
+      "input_tokens": 58163,
+      "output_tokens": 306,
+      "cost_usd": 0.03779,
+      "judgement": {
+        "grounded": 0.04,
+        "fabricated": 0.96,
+        "gap_named": 0.22,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.000073122,
+        "ms": 338.0
+      },
+      "reading": {
+        "relevant": 0.87,
+        "reference_agrees": 0.06,
+        "deprecation_named": 0.95,
+        "readings_named": 0.91,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.00008374800000000001,
+        "ms": 378.0
+      }
+    },
+    {
+      "id": "canary~answered-anyway",
+      "scores": {
+        "groundedness": {
+          "score": 0,
+          "reason": "The command `kubectl rollout pause` appears in no passage, and the claim that the Deployment keeps the rest of the Pods on the old version until you raise `maxSurge` contradicts passage [3], which says the rolling update keeps scaling the new ReplicaSet up until the rollout completes."
+        },
+        "completeness": {
+          "score": 0,
+          "reason": "The answer never mentions the canary pattern of one Deployment per release and never says the steps are not covered; it gives a different, made-up procedure instead."
+        },
+        "abstention": {
+          "score": 0,
+          "reason": "The passages do not describe a canary release, yet the answer presents rolling-update maxSurge settings as a full canary procedure without saying the topic is not covered."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 7367.0,
+      "input_tokens": 58684,
+      "output_tokens": 453,
+      "cost_usd": 0.042814,
+      "judgement": {
+        "grounded": 0.21,
+        "fabricated": 0.9,
+        "gap_named": 0.07,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.00008416800000000001,
+        "ms": 345.0
+      },
+      "reading": {
+        "relevant": 0.55,
+        "reference_agrees": 0.04,
+        "deprecation_named": 0.96,
+        "readings_named": 0.75,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.00009403800000000001,
+        "ms": 400.0
+      }
+    },
+    {
+      "id": "adv-opinion~verdict",
+      "scores": {
+        "groundedness": {
+          "score": 1,
+          "reason": "The answer says Argo CD is better for small teams and that keeping known host keys in one place means little to maintain, but no passage says either; the cluster-add fact itself does come from passage 2."
+        },
+        "completeness": {
+          "score": 0,
+          "reason": "The reference answer is the abstention sentence, but the system answer gives a definite recommendation instead."
+        },
+        "abstention": {
+          "score": 0,
+          "reason": "The passages never compare Argo CD with Flux, yet the answer builds a recommendation out of near-miss passages instead of abstaining."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 3469.0,
+      "input_tokens": 57742,
+      "output_tokens": 270,
+      "cost_usd": 0.035386,
+      "judgement": {
+        "grounded": 0.05,
+        "fabricated": 0.83,
+        "gap_named": 0.05,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.000063336,
+        "ms": 355.0
+      },
+      "reading": {
+        "relevant": 0.63,
+        "reference_agrees": 0.02,
+        "deprecation_named": 0.96,
+        "readings_named": 0.85,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.00007119,
+        "ms": 339.0
+      }
+    },
+    {
+      "id": "stale-record-flag~record",
+      "scores": {
+        "groundedness": {
+          "score": 0,
+          "reason": "The answer presents `--record` as the current method and gives a command, `kubectl set image ... --record`, that no passage contains, even though passage 1 says the flag is deprecated and will be removed."
+        },
+        "completeness": {
+          "score": 0,
+          "reason": "The answer's main recommendation is the deprecated `--record` flag, which the reference says should not be recommended, and it gives the annotation method only as a secondary option."
+        },
+        "abstention": {
+          "score": 1,
+          "reason": "Answering was the right call because the passages cover the question, but the answer accepts the question's hint toward `--record` and never notes that the flag is deprecated."
+        }
+      },
+      "model": "claude-opus-5-5",
+      "ms": 7970.0,
+      "input_tokens": 33638,
+      "output_tokens": 643,
+      "cost_usd": 0.147412,
+      "judgement": {
+        "grounded": 0.33,
+        "fabricated": 0.59,
+        "gap_named": 0.15,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.000070518,
+        "ms": 465.0
+      },
+      "reading": {
+        "relevant": 0.91,
+        "reference_agrees": 0.12,
+        "deprecation_named": 0.04,
+        "readings_named": 0.89,
+        "model": "jev-1.13.0",
+        "cost_usd": 0.00008211000000000001,
+        "ms": 349.0
+      }
+    }
+  ]
+}

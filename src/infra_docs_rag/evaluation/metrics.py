@@ -13,7 +13,7 @@ from .runs import CaseRecord, Run
 # The revised scoring rules from the calibration (reports/calibration.md): where the judge's
 # probabilities are read as a verdict, and the mechanical floor an answer has to clear.
 GROUNDED_FLOOR = 0.5  # jev grounded under this: the answer reads as ungrounded (the bottom of the band)
-FABRICATED_CEILING = 0.5  # jev fabricated at or over this: a fact was added
+FABRICATED_CEILING = 0.85  # jev fabricated at or over this: a fact was added (stage 15: 6 of 6 caught, no false alarm; 0.50 flagged 3 grounded answers)
 CITED_FLOOR = CLAIM_FLOOR  # share of an answer's claims (gap sentences aside) that has to carry a citation
 
 Better = Literal["higher", "lower"]

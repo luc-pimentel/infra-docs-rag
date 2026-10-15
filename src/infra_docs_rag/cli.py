@@ -1,6 +1,6 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+calibrate | judge grade | judge calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | traces | pipeline run | pipeline status | pipeline index | pipeline release |
 pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
@@ -36,16 +36,19 @@ from .evaluation.dataset_generate import DEFAULT_EFFORT as DATASET_EFFORT
 from .evaluation.dataset_generate import DEFAULT_N, DEFAULT_SEED, ClaudeCodeWriter, eligible, generate
 from .evaluation.dataset_generate import sample as sample_chunks
 from .evaluation.dataset_generate import save as save_generated
-from .evaluation.dataset_judge import load_reader
+from .evaluation.dataset_judge import load_reader, reading_state_of
 from .evaluation.dataset_report import write_report as write_dataset_report
 from .evaluation.dataset_run import run_dataset, to_run
 from .evaluation.gates import compare as compare_runs
 from .evaluation.gates import load_gates
+from .evaluation.judge_calibrate import CALIBRATION, JUDGE_REPORT, calibrate_judge, items_of, load_calibration
+from .evaluation.judge_report import write_report as write_judge_report
 from .evaluation.labels import LABELS, load_labels
 from .evaluation.metrics import metrics
 from .evaluation.metrics_report import write_report as write_metrics_report
 from .evaluation.report import write_report as write_evaluation_report
-from .evaluation.runs import RUNS_DIR, Run, from_grounding
+from .evaluation.rubric import GRADES, GradeSet, RubricGrader, load_rubric, new_grade_set
+from .evaluation.runs import RUNS_DIR, JudgementRecord, ReadingRecord, Run, from_grounding
 from .evaluation.slices import (
     check_matrix,
     check_slice_gates,
@@ -62,7 +65,7 @@ from .generate.cache import CACHE, CachedGenerator, GenerationCache
 from .generate.evaluate import evaluate_grounding, load_grounding
 from .generate.generator import DEFAULT_EFFORT, GENERATORS, load_generator
 from .generate.generator import DEFAULT_MODEL as DEFAULT_GENERATOR
-from .generate.judge import load_judge
+from .generate.judge import load_judge, state_of
 from .generate.prompt import render
 from .generate.prompts import DEFAULT_PROMPT, PROMPTS, load_prompt
 from .generate.report import write_report as write_grounding_report
@@ -114,6 +117,7 @@ RERANK_REPORT = Path("reports/reranking.md")
 GROUNDING_QUESTIONS = Path("eval/grounding.yaml")
 GROUNDING_REPORT = Path("reports/grounding.md")
 CALIBRATION_REPORT = Path("reports/calibration.md")
+RUBRIC_FILE = Path("eval/rubric.yaml")
 EVALUATION_REPORT = Path("reports/evaluation.md")
 VERSIONS_REPORT = Path("reports/versions.md")
 OBSERVABILITY_REPORT = Path("reports/observability.md")
@@ -579,6 +583,41 @@ def main(argv: list[str] | None = None) -> None:
     calibrate_cmd.add_argument("--labels", type=Path, default=LABELS, help=f"default {LABELS}")
     calibrate_cmd.add_argument(
         "--run", help="the saved run to read the answers from (default: the one the labels name)"
+    )
+    judge_cmd = commands.add_parser(
+        "judge",
+        help=f"the rubric grader ({RUBRIC_FILE}): grade the labelled answers, then calibrate against the hand labels",
+    )
+    judge_sub = judge_cmd.add_subparsers(dest="judge_command", required=True)
+    grade_cmd = judge_sub.add_parser(
+        "grade",
+        help=f"score every answer in {CALIBRATION} on the rubric through claude -p, jev too for the perturbed ones; saves eval/runs/<run>/{GRADES}",
+    )
+    grade_cmd.add_argument("--labels", type=Path, default=CALIBRATION, help=f"default {CALIBRATION}")
+    grade_cmd.add_argument("--run", help="the saved run the labels name (default: read from the labels)")
+    grade_cmd.add_argument(
+        "--effort", default=DEFAULT_EFFORT, help=f"the grader's effort (default {DEFAULT_EFFORT})"
+    )
+    grade_cmd.add_argument(
+        "--limit", type=int, help="only the first N answers still ungraded, to try it cheaply"
+    )
+    grade_cmd.add_argument(
+        "--regrade",
+        action="store_true",
+        help="grade every answer again, instead of only the ones not yet graded",
+    )
+    grade_cmd.add_argument(
+        "--no-jev", action="store_true", help="skip the jev readings of the perturbed answers"
+    )
+    judge_calibrate_cmd = judge_sub.add_parser(
+        "calibrate",
+        help=f"compare the grades, the probability judge and the reader to the hand labels, write {JUDGE_REPORT}; exit 1 when a labelled answer has no grade",
+    )
+    judge_calibrate_cmd.add_argument(
+        "--labels", type=Path, default=CALIBRATION, help=f"default {CALIBRATION}"
+    )
+    judge_calibrate_cmd.add_argument(
+        "--run", help="the saved run the labels name (default: read from the labels)"
     )
     dataset_cmd = commands.add_parser(
         "dataset",
@@ -1060,6 +1099,87 @@ def main(argv: list[str] | None = None) -> None:
                 print(f"wrote {DATASET_REPORT} and {SCHEMA}")
             if problems:
                 parser.exit(1)
+        elif args.command == "judge":
+            rubric = load_rubric(RUBRIC_FILE)
+            labelled_run = args.run or (yaml.safe_load(args.labels.read_text()) or {}).get("run", "")
+            if not labelled_run:
+                raise ValueError(f"{args.labels} names no run and --run was not given")
+            graded_run = Run.load(RUNS_DIR / labelled_run)
+            cal = load_calibration(args.labels, graded_run, rubric)
+            references = {r.id: r.reference_answer for r in load_dataset(DATASET_DIR).records}
+            items = items_of(cal, graded_run, references)
+            grades_path = RUNS_DIR / graded_run.name / GRADES
+            if args.judge_command == "grade":
+                grader = RubricGrader(rubric, effort=args.effort)
+                kept: dict = {}
+                if grades_path.exists() and not args.regrade:
+                    kept = GradeSet.load(grades_path).by_id()
+                todo = [i for i in items if i.id not in kept]
+                if args.limit is not None:
+                    todo = todo[: args.limit]
+                jev_judge = jev_reader = None
+                if not args.no_jev and any(i.label.perturbed for i in todo):
+                    jev_judge, jev_reader = load_judge(), load_reader()
+                print(
+                    f"{len(todo)} answers to grade ({len(kept)} kept) with {grader.model} at effort {args.effort}"
+                )
+                for item in todo:
+                    try:
+                        g = grader.grade(item.id, item.state())
+                    except ValueError as error:
+                        print(f"{item.id}: the grader failed ({str(error)[:160]}); no grade")
+                        continue
+                    if item.label.perturbed and jev_judge is not None and jev_reader is not None:
+                        from .evaluation.rubric import passages_of
+
+                        passages = passages_of(item.case)
+                        try:
+                            j = jev_judge.read_state(state_of(passages, item.case.question, item.answer))
+                            g.judgement = JudgementRecord(**j.__dict__)
+                            rd = jev_reader.read_state(
+                                reading_state_of(passages, item.case.question, item.reference, item.answer)
+                            )
+                            g.reading = ReadingRecord(**rd.__dict__)
+                        except ValueError as error:
+                            print(f"{item.id}: jev failed ({str(error)[:120]}); no probability reading")
+                    kept[item.id] = g
+                    print(
+                        f"{item.id}: "
+                        + " · ".join(
+                            f"{d} {g.score(d) if g.score(d) is not None else 'n/a'}" for d in rubric.ids
+                        )
+                        + f" · {g.ms / 1000:.0f} s",
+                        flush=True,
+                    )
+                    # saved after every answer, so a call that fails later loses nothing
+                    ordered = [kept[i.id] for i in items if i.id in kept]
+                    new_grade_set(graded_run.name, str(args.labels), rubric, grader, ordered).save(
+                        grades_path
+                    )
+                ordered = [kept[i.id] for i in items if i.id in kept]
+                saved = new_grade_set(graded_run.name, str(args.labels), rubric, grader, ordered)
+                saved.save(grades_path)
+                print(
+                    f"saved {len(ordered)} grades to {grades_path} (${saved.cost_usd:.2f} at list price); "
+                    "next: `judge calibrate`"
+                )
+            elif args.judge_command == "calibrate":
+                jc = calibrate_judge(graded_run, rubric, cal, GradeSet.load(grades_path), references)
+                write_judge_report(jc, JUDGE_REPORT)
+                for d in jc.dimensions:
+                    print(
+                        f"{d.dimension}: {d.exact_share:.0%} exact over {d.confusion.n}, weighted κ "
+                        f"{d.kappa if d.kappa is None else round(d.kappa, 2)}, pass/fail at ≥ {d.pass_at}: "
+                        f"{d.pass_agreement.agreement:.0%}"
+                    )
+                for s in jc.signals:
+                    print(
+                        f"{s.name}: {s.agreement.agreement:.0%} agreement at {s.threshold:.2f} over {s.agreement.n}"
+                    )
+                print(f"wrote {JUDGE_REPORT}")
+                if jc.ungraded:
+                    print(f"{len(jc.ungraded)} labelled answers have no grade: {', '.join(jc.ungraded)}")
+                    parser.exit(1)
         elif args.command == "calibrate":
             labelled_run = args.run or (yaml.safe_load(args.labels.read_text()) or {}).get("run", "")
             if not labelled_run:

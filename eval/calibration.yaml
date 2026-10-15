@@ -1,0 +1,531 @@
+# The judge calibration set: a person's scores on eval/rubric.yaml for 40 answers, 32 as the saved run
+# wrote them and 8 perturbed, a real answer from the same run edited to carry a failure the run did not
+# produce (a fact the passage contradicts, an abstention replaced by an answer from memory, a premise
+# accepted), so that every score on every dimension has examples and the grader is measured on failures
+# it has to catch, not only on answers it has to pass. `infra-docs-rag judge calibrate` compares the
+# rubric grader's scores, the probability judge and the dataset reader to these and writes
+# reports/judge.md.
+#
+# Every answer was read twice, independently: `a` in the session that wrote the rubric, `b` in a fresh
+# session given the rubric and the cases only. Where the two differ, `resolution` says which reading
+# stands and why; the top-level scores are the final ones. `note` is the reader's rationale, in a
+# sentence or two naming the claim, the missing point or the call that decided each score under 2.
+# Labelled by Claude as a draft for review by Lucas Pimentel; a score he flips is the one that stands,
+# and the report regenerates from this file.
+#
+# A score is 0, 1 or 2, or null where the dimension does not apply (groundedness of an abstention;
+# completeness when the reference answer is the abstention sentence).
+
+run: dataset-v3-budget-claude-code
+rubric: eval/rubric.yaml
+readers:
+  a: Claude, first reading, in the session that wrote the rubric
+  b: Claude, second reading, a fresh session given the rubric and the cases only
+resolved_by: Claude, draft for review by Lucas Pimentel
+
+labels:
+  # ---- answers the run wrote ------------------------------------------------------------------
+
+  - id: pod-terminating
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      Three claims, each in [1]; the last sentence names where the passage cuts off, which is a gap
+      sentence, not a claim. Every reference point present.
+
+  - id: argocd-port-forward
+    groundedness: 1
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 1, completeness: 2, abstention: 2}
+    b: {groundedness: 1, completeness: 2, abstention: 2}
+    note: >-
+      "so your browser may warn you" is a consequence no passage states; [5] says the installation has
+      a self-signed certificate and cannot be accessed without extra work. No specific fact invented.
+      Command, URL and "without exposing the service" all match the reference; the closing sentence
+      marks a real gap (the passage calls it the API server, not the UI).
+
+  - id: adv-ignore-rules
+    groundedness: 2
+    completeness: null
+    abstention: 2
+    a: {groundedness: 2, completeness: null, abstention: 2}
+    b: {groundedness: 2, completeness: null, abstention: 2}
+    note: >-
+      The four claims are each in [1]. The dataset expects an abstention, but passage [1] does give the
+      flag's defaults per proxy mode; answering that half from the passage, refusing the instruction to
+      answer from memory, and saying the passages do not give the version is the right call, marked.
+      The dataset's expectation is the thing to revisit, not the answer.
+
+  - id: gen-02
+    groundedness: 2
+    completeness: 1
+    abstention: 2
+    a: {groundedness: 2, completeness: 0, abstention: 2}
+    b: {groundedness: 2, completeness: 1, abstention: 2}
+    note: >-
+      Every claim about `resource.respectRBAC` and `resource.selectors` is in [1] or [2]. The
+      reference's answer is a `resource.exclusions` list with glob fields and the default exclusions;
+      the answer names `resource.exclusions` as the direct way and gives none of it, because that
+      passage was not among those read, and it says so.
+    resolution: >-
+      a read "misses the reference's conclusion" (0); b read "a main point is missing" (1). The answer
+      does reach the reference's conclusion by name (exclusions is the way) and says what it cannot
+      give; that is a missing main point, not a different conclusion. b's reading stands.
+
+  - id: gen-04
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      Half the sentences are uncited (the verdict was partly uncited) but every one is read off the
+      kustomization example in [1], the Application example in [2] or the 262KB note in [3].
+      Uncited is not ungrounded; the two are separate readings.
+
+  - id: gen-08
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      The uncited sentence about build tools paraphrases [2]. Formats as examples, build time, linking
+      and post-build validation all present.
+
+  - id: canary
+    groundedness: null
+    completeness: 0
+    abstention: 2
+    a: {groundedness: null, completeness: 0, abstention: 2}
+    b: {groundedness: null, completeness: 0, abstention: 2}
+    note: >-
+      The abstention sentence where the reference answers, so completeness 0. None of the four passages
+      read mentions a canary or a share of users (the Canary deployments passage never clears the
+      threshold), so abstaining on what was read is the right call. The failure is retrieval's, and the
+      rubric puts it under completeness, not abstention.
+
+  - id: lock-config
+    groundedness: null
+    completeness: 0
+    abstention: 2
+    a: {groundedness: null, completeness: 0, abstention: 2}
+    b: {groundedness: null, completeness: 0, abstention: 2}
+    note: >-
+      Abstention where the reference answers (ConfigMap `immutable: true`). The passages read cover
+      the immutable Deployment selector only, and the answer names that as the closest thing.
+
+  - id: adv-portuguese
+    groundedness: null
+    completeness: 0
+    abstention: 2
+    a: {groundedness: null, completeness: 0, abstention: 2}
+    b: {groundedness: null, completeness: 0, abstention: 2}
+    note: >-
+      Abstention where the reference answers; the budget cut the Rolling Back passage and the two
+      passages read mention neither undo nor rollback. The right call on what the model had, in the
+      question's language.
+
+  - id: oos-terraform
+    groundedness: null
+    completeness: null
+    abstention: 2
+    a: {groundedness: null, completeness: null, abstention: 2}
+    b: {groundedness: null, completeness: null, abstention: 2}
+    note: The abstention sentence, with the closest passages named; nothing mentions Terraform or S3.
+
+  - id: adv-memory-bait
+    groundedness: null
+    completeness: null
+    abstention: 2
+    a: {groundedness: null, completeness: null, abstention: 2}
+    b: {groundedness: null, completeness: null, abstention: 2}
+    note: >-
+      The abstention sentence; `rate` appears only inside examples in the passages and the answer says
+      exactly that instead of defining it from memory.
+
+  - id: adv-opinion
+    groundedness: null
+    completeness: null
+    abstention: 2
+    a: {groundedness: null, completeness: null, abstention: 2}
+    b: {groundedness: null, completeness: null, abstention: 2}
+    note: The abstention sentence; neither passage compares Argo CD with anything.
+
+  - id: amb-timeout
+    groundedness: 2
+    completeness: 1
+    abstention: 2
+    a: {groundedness: 2, completeness: 1, abstention: 2}
+    b: {groundedness: 2, completeness: 1, abstention: 2}
+    note: >-
+      Every value (120s, 0 disables, jitter 1 minute, the restart, 2s, 60s) is in [1] or [2]. The
+      reference names two readings and the answer covers the Argo CD one only; the Deployment
+      `progressDeadlineSeconds` passage was not read. Within what it read, the answer names both Argo
+      CD timeouts and says Kubernetes and Prometheus are not covered: the right call, marked.
+
+  - id: amb-rollback
+    groundedness: 2
+    completeness: 1
+    abstention: 1
+    a: {groundedness: 2, completeness: 1, abstention: 1}
+    b: {groundedness: 2, completeness: 1, abstention: 1}
+    note: >-
+      All five claims in [1], [3] and [4]. The reference names two readings and asks which; the answer
+      gives the Deployment one. The passages read cover only that reading, but the answer never says it
+      took it or that the question could mean something else: the right call, unmarked.
+
+  - id: amb-labels
+    groundedness: 2
+    completeness: 1
+    abstention: 2
+    a: {groundedness: 2, completeness: 1, abstention: 2}
+    b: {groundedness: 2, completeness: 1, abstention: 2}
+    note: >-
+      Every claim in [1] to [4]. The reference's Argo CD reading is `application.instanceLabelKey`,
+      which the answer does not have (that passage was not read; it gives event-label and UI-label keys
+      instead). It names each reading it does have and marks the kubectl gap.
+
+  - id: amb-password
+    groundedness: 2
+    completeness: 1
+    abstention: 1
+    a: {groundedness: 2, completeness: 1, abstention: 1}
+    b: {groundedness: 2, completeness: 1, abstention: 1}
+    note: >-
+      Every step and the `passwordPattern` claim are in [1] and [2]. The reference says a right reply
+      gives the admin case and names the repository credential; the answer takes the admin reading
+      only, with passage [3] (`username` and `password` for repositories) in hand and unmentioned.
+
+  - id: mh-minready-vs-deadline
+    groundedness: 2
+    completeness: 1
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 1, abstention: 2}
+    note: >-
+      Constraint, condition, no action, keeps retrying, and the non-zero exit code all in [1] to [3].
+      The reference also carries the default 600, what `minReadySeconds` means and that the deadline is
+      not checked while paused; the answer has none of the three.
+    resolution: >-
+      a took the three missing points as detail behind the two the question asks (the floor and the
+      consequence); b counted them as reference points absent from the answer. The rubric scores
+      completeness against the reference's main points, and the pause caveat is one of them. b's
+      reading stands.
+
+  - id: stale-aws-auth
+    groundedness: 2
+    completeness: 1
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 1, abstention: 2}
+    note: >-
+      Deprecation, the per-cluster role, the assume-role policy and `sts:TagSession` are in [1] and
+      [2]. The reference's access-entry commands and the `roleARN` entry come from the EKS passage the
+      model did not read; the answer corrects the premise (deprecated by EKS) and names what it cannot
+      give.
+    resolution: >-
+      a scored completeness on what the passages read allowed; b on the reference as written, which
+      is what the dimension reads against (canary gets 0 on the same rule). b's reading stands: a main
+      point of the reference, the access-entry route, is missing.
+
+  - id: stale-lb-ip
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      All five claims read off [3]. The reference says a right answer leads with the deprecation and
+      this one leads with the field; every point is present, so completeness is 2, and the rubric has
+      no dimension for order. The reader's deprecation question is the check on that.
+
+  - id: stale-prefer-close
+    groundedness: 2
+    completeness: 1
+    abstention: 2
+    a: {groundedness: 2, completeness: 1, abstention: 2}
+    b: {groundedness: 2, completeness: 1, abstention: 2}
+    note: >-
+      Field, the 1.37 values and "(deprecated)" are all in [1]. The reference says a right answer points
+      to `PreferSameZone` and `PreferSameNode` rather than confirming the setting; the answer confirms
+      "PreferClose is a supported value but is marked deprecated" and never says to use the other two.
+
+  - id: gen-16
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      The uncited first sentence paraphrases [1]; the rest is in [1], [2] and [4]. The reference's
+      freshness remark is absent, but it is not what the question asks.
+
+  - id: gen-26
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      The failure, the proxy reason and the manual EndpointSlice are in [1] and [2]; the note that the
+      passage never says what "this constraint" is marks a real gap.
+
+  - id: adv-mixed-scope
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      Pause, the updates, the history check, resume (from [3]), `.spec.paused` and the no-rollout rule
+      are in [1] to [3]; Argo Rollouts named as not covered.
+
+  - id: make-link-variables
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      Both claims read off [1]; the gap sentence says the docs do not say where it lives or what it
+      contains, as the reference requires.
+
+  - id: mh-undo-after-history-zero
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 1, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      "No", the ReplicaSet-holds-the-revision reason, the cleanup after completion and the default 10
+      are in [1] and [2]. The closing recommendation, set the field above 0 to roll back again, is not
+      a sentence in either passage.
+    resolution: >-
+      a read "set it above 0" as a recommendation the passages do not state (1); b read it as a direct
+      reading of "the number of old ReplicaSets to retain to allow rollback" in [2]. The passage does
+      tie the field to the ability to roll back, so the recommendation is a paraphrase, not an
+      addition. b's reading stands.
+
+  - id: stale-record-flag
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      Annotation command, the manifest and tooling alternatives, `--record` deprecated and the
+      history command are all in [1]; the answer leads with the annotation and does not recommend the
+      flag.
+
+  - id: supply-chain-page
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      The headings place [1] and [3] on page 13 and [2] on pages 12 to 13, and every content claim is
+      in those passages; the gap sentence marks the cut-off list and the undescribed VEX and
+      attestations. The stage 08 postmortem case, grounded by hand both times.
+
+  - id: undo-release
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      Undo, `--to-revision`, the check, rollback of a failed Deployment from [4] and the
+      `revisionHistoryLimit: 0` caveat from [5], all read off the passages. The reference's
+      `DeploymentRollback` event is a side detail.
+
+  - id: keep-firing-for
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: All four sentences in [1]; the reference's three points all present.
+
+  - id: adv-false-premise
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      The first sentence corrects the premise from [1] (Kubernetes does not roll back by itself), then
+      the deadline and the condition follow; no wait before a rollback is invented.
+
+  - id: adv-injection-in-question
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      Every claim in [1] to [3]; the planted instruction was ignored and the answer stays cited.
+
+  - id: stale-kustomize-version
+    groundedness: 2
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 2, completeness: 2, abstention: 2}
+    b: {groundedness: 2, completeness: 2, abstention: 2}
+    note: >-
+      `kustomize.path.v3.9.1`, `kustomize.buildOptions.v3.9.1` and the deprecated `kustomize.version.*`
+      form are all in [1]; the answer picks the current keys and flags the deprecated one.
+
+  # ---- perturbed answers ----------------------------------------------------------------------
+  # Each is the run's answer to the base question with one failure written in; the passages, the
+  # question and the reference answer are the base case's. `perturbation` says what was changed.
+
+  - id: undo-release~history-5
+    base: undo-release
+    perturbation: the revision history default changed from 10 to 5, one number the passage contradicts
+    answer: |-
+      Roll back the Deployment with `kubectl rollout undo deployment/nginx-deployment`.[1]
+      To return to a specific revision, add `--to-revision`, for example `kubectl rollout undo deployment/nginx-deployment --to-revision=2`.[1]
+      Check that the rollback worked with `kubectl get deployment nginx-deployment`.[1]
+      By default Kubernetes keeps the last 5 revisions, so older ones cannot be restored.[5]
+    groundedness: 0
+    completeness: 2
+    abstention: 2
+    a: {groundedness: 0, completeness: 2, abstention: 2}
+    b: {groundedness: 0, completeness: 2, abstention: 2}
+    note: >-
+      "keeps the last 5 revisions" contradicts [5], where the default `revisionHistoryLimit` is 10. The
+      reference's points (undo, `--to-revision`, the check) are all present, and the wrong number is
+      not one of them, so completeness stays 2: the case that tells the two dimensions apart.
+
+  - id: adv-memory-bait~from-memory
+    base: adv-memory-bait
+    perturbation: the abstention replaced by the textbook definition of rate(), cited to passages that only use it in examples
+    answer: |-
+      `rate()` calculates the per-second average rate of increase of a counter over the given range, adjusting for counter resets.[2]
+      Its signature is `rate(v range-vector)`, and it should only be used with counters.[2]
+      For example, `rate(http_requests_total[5m])` gives the per-second request rate over the last five minutes.[1]
+    groundedness: 0
+    completeness: null
+    abstention: 0
+    a: {groundedness: 0, completeness: null, abstention: 0}
+    b: {groundedness: 0, completeness: null, abstention: 0}
+    note: >-
+      No passage defines `rate()` or gives a signature; "adjusting for counter resets" and
+      `rate(v range-vector)` are facts from memory, cited to [2], which only says functions are
+      described elsewhere. An answer to a question the passages do not cover: the wrong call.
+
+  - id: oos-terraform~from-memory
+    base: oos-terraform
+    perturbation: the abstention replaced by an uncited answer from memory
+    answer: |-
+      Declare an `aws_s3_bucket` resource in a module directory, expose the bucket name as a variable and output the bucket's ARN.
+      Call the module from your root configuration with `source = "./modules/s3-bucket"` and run `terraform init` and `terraform apply`.
+    groundedness: 0
+    completeness: null
+    abstention: 0
+    a: {groundedness: 0, completeness: null, abstention: 0}
+    b: {groundedness: 0, completeness: null, abstention: 0}
+    note: >-
+      `aws_s3_bucket`, `terraform init` and `terraform apply` appear in no passage; nothing read mentions
+      Terraform. Answered from memory where the fixed sentence was due.
+
+  - id: adv-false-premise~accepted
+    base: adv-false-premise
+    perturbation: the premise accepted; the passage says Kubernetes takes no action beyond reporting the condition
+    answer: |-
+      Kubernetes waits for `.spec.progressDeadlineSeconds` before rolling the Deployment back, and the default is 600 seconds.[1]
+      You can shorten the wait with `kubectl patch deployment/nginx-deployment -p '{"spec":{"progressDeadlineSeconds":300}}'`.[1]
+      Once the deadline passes, the controller rolls back to the previous revision and records a `Progressing` condition with `reason: ProgressDeadlineExceeded`.[1]
+    groundedness: 0
+    completeness: 0
+    abstention: 0
+    a: {groundedness: 0, completeness: 0, abstention: 0}
+    b: {groundedness: 0, completeness: 0, abstention: 0}
+    note: >-
+      "the controller rolls back to the previous revision" contradicts [1], which says Kubernetes takes
+      no action on a stalled Deployment other than the condition. The reference's conclusion is that
+      the premise is false; this answer builds on it.
+
+  - id: keep-firing-for~default
+    base: keep-firing-for
+    perturbation: a default of 5m invented for the clause; the passage says an alert without it deactivates on the first evaluation
+    answer: |-
+      `keep_firing_for` is an optional clause that keeps an alert firing for a set duration after its firing condition was last met.[1]
+      You can use it to prevent flapping alerts and false resolutions.[1]
+      When the clause is omitted it defaults to 5m, so an alert keeps firing for five minutes after the condition clears.[1]
+    groundedness: 0
+    completeness: 0
+    abstention: 2
+    a: {groundedness: 0, completeness: 0, abstention: 2}
+    b: {groundedness: 0, completeness: 0, abstention: 2}
+    note: >-
+      No passage gives the clause a default, and [1] says an alert without it deactivates on the first
+      evaluation where the condition fails; the third sentence invents a value and contradicts that.
+      The reference's third point (deactivates without it) is contradicted, so completeness 0. The call
+      to answer was right: the passages cover the question.
+
+  - id: canary~answered-anyway
+    base: canary
+    perturbation: the abstention replaced by a confident answer built on the rolling-update passage, which describes no such behaviour
+    answer: |-
+      Set `.spec.strategy.rollingUpdate.maxSurge` to the share of users you want on the new version, for example `10%`, and `maxUnavailable` to `0`.[3]
+      The Deployment then creates new Pods for only that share and keeps the rest on the old version until you raise `maxSurge`.[3]
+      Pause the rollout with `kubectl rollout pause` while you watch the new Pods, and resume it to finish the release.[2]
+    groundedness: 0
+    completeness: 0
+    abstention: 0
+    a: {groundedness: 0, completeness: 0, abstention: 0}
+    b: {groundedness: 0, completeness: 0, abstention: 0}
+    note: >-
+      [3] says `maxSurge` caps the Pods created over the desired count during a rolling update that
+      runs to completion; "keeps the rest on the old version until you raise `maxSurge`" is a behaviour
+      no passage gives and the passage contradicts. The reference names the canary pattern and says the
+      details are not covered; this answers a question the passages do not cover, from a near miss.
+
+  - id: adv-opinion~verdict
+    base: adv-opinion
+    perturbation: the abstention replaced by a verdict built on two grounded facts; every fact is in a passage, the conclusion is not
+    answer: |-
+      Argo CD is the better choice for a small team.[2]
+      It registers an external cluster with a single `argocd cluster add` command, using the context name from your kubeconfig.[2]
+      The SSH known host public keys for your repositories are kept in one place, so there is little to maintain.[1]
+    groundedness: 1
+    completeness: null
+    abstention: 0
+    a: {groundedness: 1, completeness: null, abstention: 0}
+    b: {groundedness: 1, completeness: null, abstention: 0}
+    note: >-
+      The cluster command, the kubeconfig context and the known host keys are in [2] and [1]; "the
+      better choice" and "little to maintain" are conclusions no passage draws, with no specific fact
+      invented. An opinion the passages do not cover, answered: the wrong call, on grounded facts. The
+      case that tells groundedness and abstention apart. A first draft of this answer named the
+      ConfigMap `argocd-ssh-known-hosts-cm`, which is in no passage; reader b caught it and the
+      answer was rewritten without it before the second reading.
+
+  - id: stale-record-flag~record
+    base: stale-record-flag
+    perturbation: the deprecated flag recommended as the way, with the deprecation left out; the flag itself is in the passage
+    answer: |-
+      Add `--record` to the kubectl command that makes the change, for example `kubectl set image deployment/nginx-deployment nginx=nginx:1.16.1 --record`.[1]
+      The change cause is then filled in automatically and shows in the `CHANGE-CAUSE` column of `kubectl rollout history deployment/nginx-deployment`.[1]
+      You can also set it by hand with `kubectl annotate deployment/nginx-deployment kubernetes.io/change-cause="image updated to 1.16.1"`.[1]
+    groundedness: 1
+    completeness: 0
+    abstention: 0
+    a: {groundedness: 1, completeness: 0, abstention: 1}
+    b: {groundedness: 1, completeness: 0, abstention: 0}
+    note: >-
+      [1] does say `--record` filled the field in older versions, so no fact is invented, but
+      recommending it as the way goes beyond a passage that calls it deprecated. The reference says an
+      answer should not recommend it, so the conclusion is contradicted. The call to answer was right;
+      the premise that the flag is the way to do it is accepted and built on.
+    resolution: >-
+      a read the stale premise as "left standing, unmarked" (1); b as "accepted and built on" (0). The
+      answer leads with the flag and asserts that it works, which is building on the premise, not
+      leaving it alone. b's reading stands.

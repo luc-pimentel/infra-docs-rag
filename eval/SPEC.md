@@ -2,7 +2,8 @@
 
 What the benchmark measures, how a question is labelled, what each metric means, and what a change has
 to clear. The questions live in [`retrieval.yaml`](retrieval.yaml), [`hybrid.yaml`](hybrid.yaml) and
-[`grounding.yaml`](grounding.yaml); the hand labels in [`labels.yaml`](labels.yaml); the pipeline
+[`grounding.yaml`](grounding.yaml); the hand labels in [`labels.yaml`](labels.yaml) and, on the rubric,
+in [`calibration.yaml`](calibration.yaml); the judge rubric in [`rubric.yaml`](rubric.yaml); the pipeline
 versions in [`versions.yaml`](versions.yaml); the gates in [`gates.yaml`](gates.yaml); saved runs under
 [`runs/`](runs/); the releases in [`releases.yaml`](releases.yaml). The files are versioned with the
 code: a run's manifest records the git commit, the index, the retrieval configuration, the generator and
@@ -117,9 +118,9 @@ answer, not an abstention, refusal or cut-off.
 - `grounding.fully_cited`: answers with no uncited sentence.
 - `grounding.unverified_citations`: typed citations that did not check out, over the run.
 - `grounding.judge_grounded`: answers the judge reads as grounded, P ≥ 0.50.
-- `grounding.judge_fabricated`: answers the judge reads as adding a fact, P ≥ 0.50.
+- `grounding.judge_fabricated`: answers the judge reads as adding a fact, P ≥ 0.85.
 - `grounding.judge_unsure`: answers with a grounded or fabricated reading in the 0.4–0.6 band.
-- `grounding.flagged`: answers a revised rule flags: wrong passage cited, claims cited under 80%, judge grounded under 0.50 or fabricated at 0.50 or over.
+- `grounding.flagged`: answers a revised rule flags: wrong passage cited, claims cited under 80%, judge grounded under 0.50 or fabricated at 0.85 or over (the fabricated ceiling moved from 0.50 after the stage 15 calibration, section 8).
 
 **Abstention**
 
@@ -243,8 +244,8 @@ ask because it had no reference answer: *relevant* (the answer addresses the que
 replaced, the answer says so; true when there is nothing to flag), *readings_named* (when the question
 has several readings, the answer names them, asks which, or says which it took; true when it has one).
 The state is the passages under their headings, the question, the reference answer and the marked
-answer. A probability at or over 0.50 reads as yes. The reader is not calibrated against hand labels
-yet; that is the next stage, and the gates on its readings are set loose until then.
+answer. A probability at or over 0.50 reads as yes. Section 8 calibrates the reader's two main
+questions against the rubric labels; the gates on its readings stay loose until that agreement is good.
 
 **Metrics.** Every stage 08 metric, computed on a slice as on a run (the `grounding.*` names also
 appear as `faithfulness.*`), plus:
@@ -281,3 +282,45 @@ answer still failed (an abstention with the passage in hand, the wrong passage c
 uncited), *both* when an abstention was expected and a near miss cleared the threshold and was
 answered, and *reading* for a record that held by the checks and that the judge or the reader
 disputes.
+
+## 8. The judge rubric and its calibration
+
+[`rubric.yaml`](rubric.yaml) is the judge specification: three dimensions, each scored 0, 1 or 2
+against one thing, so that a score on one says nothing about the others, and null where the dimension
+does not apply.
+
+| Dimension | Reads the answer against | 2 | 1 | 0 | null when |
+|---|---|---|---|---|---|
+| `groundedness` | the passages only | every claim in a passage (gap sentences aside) | a claim beyond the passages, no specific fact invented | a specific fact no passage gives, or one a passage contradicts | the answer is the abstention sentence |
+| `completeness` | the reference answer | every main point of the reference | a main point missing, hedged, or one reading of several | the reference's conclusion missed, contradicted, or an abstention where it answers | the reference is the abstention sentence |
+| `abstention` | what the passages cover | the right call, marked (the gap named, the premise corrected) | the right call, unmarked | the wrong call: answered what is not covered, abstained with the answer in hand, a false premise built on | never |
+
+Each score has an example from a labelled answer. `operating` holds the threshold a score passes at
+per dimension; the calibration sets it and a person updates it when the report says so. The rubric
+does not score currency (a deprecated field presented as current) or the order of an answer; the
+reader's deprecation question (section 7) is the check on those.
+
+**The grader.** `judge grade` renders the rubric into a system prompt (the definitions as written, not
+the examples), sends the passages under their headings, the question, the reference answer and the
+marked answer through `claude -p` with a JSON schema, and saves one score and one-sentence reason per
+dimension to `runs/<run>/grades.json`, with the model, effort, prompt hash and cost. It grades only
+the answers in `calibration.yaml`; answers already graded are kept unless `--regrade`.
+
+**The calibration set.** [`calibration.yaml`](calibration.yaml) is a person's scores on the rubric
+for 25 to 40 answers of one saved run, every one read twice by independent readers (`a`, `b`) and
+resolved where they differ (`resolution` is required there). Most are answers as the run wrote them,
+chosen to cover every verdict, every expectation and the answers the probability judge or the reader
+read lowest; some are *perturbed*: a real answer with one failure written in (a fact the passage
+contradicts, an abstention replaced by an answer from memory, a premise accepted), kept with its base
+case's passages, question and reference, so that each score on each dimension has examples and the
+grader is measured on failures it has to catch. A perturbed label carries `base`, `perturbation` and
+`answer`; `judge grade` asks jev the stage 08 and stage 14 questions about it too, since the run never
+saw it.
+
+**The report.** `judge calibrate` compares, per dimension, the grader's score to the person's: exact
+agreement, a quadratic weighted κ over the three scores, the confusion matrix, and the pass/fail
+agreement at each threshold; the overall verdict (every applicable dimension passes); the stage 08
+judge (grounded, fabricated) and the stage 14 reader (relevant, agrees with the reference) swept
+against the same labels; the two readers against each other; and every answer where the grader and
+the person differ, with both reasons. It writes [`../reports/judge.md`](../reports/judge.md) and exits
+1 when a labelled answer has no grade; that is the PR check, with no model call.

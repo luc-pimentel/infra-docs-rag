@@ -57,7 +57,7 @@ The two runs share index, generator, backend, prompt, effort; only the retrieval
 | `grounding.fully_cited` | 36/56 (64%) | 38/56 (68%) | +4% | ▲ | answers with no uncited sentence |
 | `grounding.unverified_citations` | 10 | 2 | -8 | ▲ | citations the model typed that did not check out against a passage, over the run |
 | `grounding.judge_grounded` | 54/56 (96%) | 56/56 (100%) | +4% | ▲ | answers the judge reads as grounded (P ≥ 0.5) |
-| `grounding.judge_fabricated` | 1/56 (2%) | 0/56 (0%) | -2% | ▲ | answers the judge reads as adding a fact (P ≥ 0.5) |
+| `grounding.judge_fabricated` | 1/56 (2%) | 0/56 (0%) | -2% | ▲ | answers the judge reads as adding a fact (P ≥ 0.85) |
 | `grounding.judge_unsure` | 3 | 3 | +0.00 | = | answers with a grounded or fabricated reading in the 0.4–0.6 band |
 | `grounding.flagged` | 4/56 (7%) | 1/56 (2%) | -5% | ▲ | answers a revised rule flags: wrong passage, claims cited under the floor, or the judge's reading |
 

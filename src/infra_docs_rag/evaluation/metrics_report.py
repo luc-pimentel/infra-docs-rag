@@ -243,9 +243,9 @@ def write_report(
         "and the overall numbers and the gates decide. The matrix thresholds are targets read off this baseline; "
         "the four modes the benchmark could not measure (`stale-answer`, `wrong-reading`, `missing-hop`, "
         "`fabrication`) now have a number each, from the reader's deprecation and readings questions, the "
-        "two-passage citation check and the judge's fabricated reading. The reader's probabilities are not yet "
-        "calibrated against hand labels the way the judge's were in stage 08; that is the next stage, and until "
-        "then the relevance and agreement gates are set loose."
+        "two-passage citation check and the judge's fabricated reading. The reader's relevance and agreement "
+        "readings are calibrated against the rubric labels in reports/judge.md (stage 15); the gates on them "
+        "stay loose until that agreement is good."
     )
     w("")
     w("```sh")
