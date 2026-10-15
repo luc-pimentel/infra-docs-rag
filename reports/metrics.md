@@ -235,6 +235,14 @@ The pass/fail rules a change has to clear, each on one slice. A critical gate th
 | `failure_mode=none` | `answers.held` | ≥ 0.85 | 28/31 (90%) | pass | the clean examples held 28 of 31 on the baseline (three generated ones partly uncited or off the reference); one more may flip, two is a regression |
 | `all` | `answers.held` | must not drop by more than 0.03 | 65/74 (88%) | skipped | two records' worth over the whole set |
 | `all` | `relevance.reference_agrees` | must not drop by more than 0.05 | 55/61 (90%) | skipped | agreement with the reference answers is the newest reading and the least calibrated; a warning |
+| `category=adversarial` | `answers.held` | must not drop by more than 0.12 | 7/9 (78%) | skipped | the adversarial records are where a prompt or retrieval change shows as a confident wrong answer; one of nine is noise, two block |
+| `category=no-answer` | `abstention.expected` | must not drop | 6/6 (100%) | skipped | six records the corpus does not answer; one more answered than the baseline is one hallucination more, so no slack |
+| `split=test` | `answers.held` | must not drop by more than 0.04 | 48/55 (87%) | skipped | the held-out split; two of 55 is 3.6%, three is a regression a rule tuned on dev did not catch |
+| `difficulty=hard` | `answers.held` | must not drop by more than 0.06 | 30/34 (88%) | skipped | the hard records are where a retrieval change shows first; two of 34 is 5.9% |
+| `category=fact-lookup` | `answers.held` | must not drop by more than 0.05 | 36/43 (84%) | skipped | the bulk of the set; two of 43 is 4.7%, and a change that lifts the aggregate here while another slice drops is the case the slice gates exist for |
+| `category=multi-hop` | `hops.covered` | must not drop by more than 0.2 | 4/5 (80%) | skipped | five records; one fewer answer citing both passages warns, it cannot block |
+| `category=stale` | `stale.deprecation_named` | must not drop by more than 0.2 | 5/5 (100%) | skipped | six records read by the reader's least calibrated question; a warning |
+| `category=ambiguous` | `ambiguity.readings_named` | must not drop by more than 0.2 | 4/5 (80%) | skipped | five records; a warning |
 
 ## 5. Reading the report
 

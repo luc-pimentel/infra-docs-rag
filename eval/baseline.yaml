@@ -1,0 +1,20 @@
+# The regression baseline: the saved dataset run every change is compared against, and the
+# version of everything that produced it. `dataset compare` reads it as the default --baseline
+# and refuses to compare when it is stale: the run no longer matches the pin, or the dataset is
+# no longer the one the run answered (then the baseline has to be run again). Written by
+# `infra-docs-rag dataset baseline set --run <run>`; do not edit by hand.
+run: dataset-v3-budget-claude-code
+dataset: 74+e1454a76bb7b
+version: v3-budget
+retrieval_version: v3-budget+a9ed5d977ad2
+prompt_version: cite-v1+e732a9f0cc40
+index_version: 3971d9f1e10e
+embedding_version: BAAI/bge-small-en-v1.5@5c38ec7c405e
+chunking_version: section-aware-512-64-context+825a7940b716
+generator: claude-opus-5-5
+backend: claude-code
+judge: jev-1.13.0
+pinned_at: '2026-10-15T21:54:44+00:00'
+git_sha: 5e2a3a6
+note: 'the stage 14 baseline: v3-budget, the current release, through claude-code;
+  the matrix thresholds in eval/matrix.yaml were read off it'

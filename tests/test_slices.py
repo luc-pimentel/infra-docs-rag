@@ -277,7 +277,8 @@ def test_the_metrics_report_writes_every_section(dataset_run, tmp_path):
     sliced = slice_metrics(run, records)
     matrix = load_matrix(ROOT / "eval/matrix.yaml")
     results = check_matrix(matrix.matrix, sliced)
-    gates = check_slice_gates(matrix.gates, sliced, sliced)
+    present = [g for g in matrix.gates if g.slice in sliced]  # the six records cover a few slices
+    gates = check_slice_gates(present, sliced, sliced)
     out = tmp_path / "metrics.md"
     write_report(run, records, sliced, results, gates, diagnoses(run, records), run, out)
     text = out.read_text()

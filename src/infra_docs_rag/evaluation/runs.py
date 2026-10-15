@@ -172,6 +172,7 @@ class RunManifest(BaseModel):
     judge: str | None = None
     questions: int
     lineage: PipelineManifest | None = None  # which version of every stage produced the answers
+    dataset: str | None = None  # `<records>+<hash>`: the dataset version a dataset run answered (dataset.py)
 
 
 class Run(BaseModel):

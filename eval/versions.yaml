@@ -8,8 +8,11 @@
 #
 # v1 is the pipeline as it stood after stage 04: the cosine ranking alone, no reranker. v2 adds stages
 # 05 and 06, hybrid fusion and the cross-encoder, and is what `default` resolves to. v3 is v2 with a
-# token budget on the passages (stage 11), the current release. The regression gates in gates.yaml are
-# what a change from one to the next has to clear.
+# token budget on the passages (stage 11), the current release. v4 is the stage 16 candidate: v3 with
+# the cross-encoder reading 50 first-stage candidates instead of 20, the one change made to see whether
+# the baseline dataset run's retrieval miss (the reranker drops the right passage for lock-config) is
+# a depth problem, and what it costs elsewhere. The regression gates in gates.yaml are what a change
+# from one to the next has to clear; eval/matrix.yaml holds the slice gates a dataset run has to clear.
 
 versions:
   - name: v1-dense
@@ -45,3 +48,17 @@ versions:
       rerank:
         model: bge-base
         candidates: 20
+
+  - name: v4-rerank-50
+    description: v3 with the cross-encoder over 50 candidates instead of 20; the stage 16 change, aimed at the retrieval miss the baseline dataset run shows
+    retrieval:
+      k: 5
+      min_score: 0.5
+      mode: hybrid
+      budget: 1200
+      fusion:
+        strategy: weighted
+        alpha: 0.5
+      rerank:
+        model: bge-base
+        candidates: 50

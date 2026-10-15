@@ -1,6 +1,6 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | judge grade | judge calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+calibrate | judge grade | judge calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | traces | pipeline run | pipeline status | pipeline index | pipeline release |
 pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
@@ -27,6 +27,7 @@ from .evaluation.dataset import (
     SCHEMA,
     benchmark_index,
     check,
+    dataset_version,
     json_schema,
     load_dataset,
     observe,
@@ -46,6 +47,9 @@ from .evaluation.judge_report import write_report as write_judge_report
 from .evaluation.labels import LABELS, load_labels
 from .evaluation.metrics import metrics
 from .evaluation.metrics_report import write_report as write_metrics_report
+from .evaluation.regression import BASELINE, Baseline
+from .evaluation.regression import compare as compare_dataset_runs
+from .evaluation.regression_report import write_report as write_regression_report
 from .evaluation.report import write_report as write_evaluation_report
 from .evaluation.rubric import GRADES, GradeSet, RubricGrader, load_rubric, new_grade_set
 from .evaluation.runs import RUNS_DIR, JudgementRecord, ReadingRecord, Run, from_grounding
@@ -126,6 +130,7 @@ LATENCY_DATA = Path("eval/latency.json")
 CANARY = Path("eval/canary.yaml")
 DATASET_REPORT = Path("reports/dataset.md")
 METRICS_REPORT = Path("reports/metrics.md")
+REGRESSION_REPORT = Path("reports/regression.md")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -673,6 +678,30 @@ def main(argv: list[str] | None = None) -> None:
     metrics_cmd.add_argument(
         "--list-metrics", action="store_true", help="the metric names the matrix and gates can use"
     )
+    compare_cmd = dataset_sub.add_parser(
+        "compare",
+        help=f"a candidate dataset run against the baseline, slice by slice and record by record, through the slice gates → {REGRESSION_REPORT}; exit 1 when the decision is block",
+    )
+    compare_cmd.add_argument("--candidate", required=True, help="a saved dataset run under eval/runs/")
+    compare_cmd.add_argument(
+        "--baseline", help=f"a saved dataset run to compare against (default: the run {BASELINE} pins)"
+    )
+    compare_cmd.add_argument(
+        "--no-block",
+        action="store_true",
+        help="write the report and print the decision but exit 0 whatever it is: for regenerating the committed record of an experiment",
+    )
+    baseline_cmd = dataset_sub.add_parser(
+        "baseline", help=f"the regression baseline in {BASELINE}: pin a run, or check the pin is not stale"
+    )
+    baseline_sub = baseline_cmd.add_subparsers(dest="baseline_command", required=True)
+    set_cmd = baseline_sub.add_parser("set", help="pin a saved dataset run as the baseline")
+    set_cmd.add_argument("--run", required=True, help="a saved dataset run under eval/runs/")
+    set_cmd.add_argument("--note", default="", help="why this run is the baseline")
+    baseline_sub.add_parser(
+        "check",
+        help="exit 1 when the pinned run no longer matches the pin or the dataset is no longer the one it answered",
+    )
     pipeline_cmd = commands.add_parser(
         "evaluate-pipeline",
         help="compare two saved runs metric by metric against the gates, write reports/evaluation.md; exit 1 when a critical gate fails",
@@ -1021,10 +1050,73 @@ def main(argv: list[str] | None = None) -> None:
                     ),
                 )
                 lineage = lineage.model_copy(update={"generator": dg.grounding.generator})
-                saved = to_run(dg, name, version.name, version.description, lineage)
+                saved = to_run(
+                    dg, name, version.name, version.description, lineage, dataset_version(ds.records)
+                )
                 print(
                     f"saved the run to {saved.save(RUNS_DIR / saved.name)}/; next: `dataset metrics --run {saved.name}`"
                 )
+                return
+            if args.dataset_command == "baseline":
+                if args.baseline_command == "set":
+                    pin = Baseline.of(Run.load(RUNS_DIR / args.run), args.note)
+                    problems = pin.problems(Run.load(RUNS_DIR / args.run), ds.records)
+                    if problems:
+                        raise ValueError(f"{args.run} cannot be the baseline: " + "; ".join(problems))
+                    print(
+                        f"pinned {args.run} (dataset {pin.dataset}, {pin.retrieval_version}) in {pin.save(BASELINE)}"
+                    )
+                    return
+                pin = Baseline.load(BASELINE)
+                problems = pin.problems(Run.load(RUNS_DIR / pin.run), ds.records)
+                for p in problems:
+                    print(f"stale: {p}")
+                print(
+                    f"baseline {pin.run}: dataset {pin.dataset}, {pin.retrieval_version}, prompt {pin.prompt_version}, "
+                    f"index {pin.index_version}, {pin.generator} via {pin.backend}; pinned {pin.pinned_at[:10]} at {pin.git_sha}"
+                    + (f"; {pin.note}" if pin.note else "")
+                )
+                if problems:
+                    parser.exit(1)
+                return
+            if args.dataset_command == "compare":
+                if args.baseline:
+                    base_run = Run.load(RUNS_DIR / args.baseline)
+                else:
+                    pin = Baseline.load(BASELINE)
+                    base_run = Run.load(RUNS_DIR / pin.run)
+                    problems = pin.problems(base_run, ds.records)
+                    if problems:
+                        raise ValueError(
+                            f"the baseline {BASELINE} pins is stale: "
+                            + "; ".join(problems)
+                            + " (or name a run with --baseline)"
+                        )
+                cand_run = Run.load(RUNS_DIR / args.candidate)
+                if cand_run.name == base_run.name:
+                    raise ValueError(f"{args.candidate} is the baseline; name another run with --candidate")
+                reg = compare_dataset_runs(base_run, cand_run, ds.records, load_matrix())
+                if reg.missing:
+                    print(
+                        f"warning: {len(reg.missing)} records are not in both runs and are left out ({', '.join(reg.missing[:5])}{'…' if len(reg.missing) > 5 else ''})"
+                    )
+                write_regression_report(reg, REGRESSION_REPORT, default_baseline=not args.baseline)
+                for g in reg.gates:
+                    status = (
+                        "skip"
+                        if g.skipped
+                        else "pass"
+                        if g.result.passed
+                        else ("FAIL" if g.gate.critical else "warn")
+                    )
+                    print(f"{status}  {g.gate.slice} {g.gate.metric}: {g.result.detail}")
+                for x in reg.losses:
+                    print(f"lost  {x.id}: {'; '.join(x.what)}")
+                for x in reg.wins:
+                    print(f"won   {x.id}: {'; '.join(x.what)}")
+                print(f"{reg.verdict}; wrote {REGRESSION_REPORT}")
+                if reg.decision == "block" and not args.no_block:
+                    parser.exit(1)
                 return
             if args.dataset_command == "metrics":
                 if args.list_metrics:

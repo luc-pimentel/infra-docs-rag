@@ -4,8 +4,9 @@ What the benchmark measures, how a question is labelled, what each metric means,
 to clear. The questions live in [`retrieval.yaml`](retrieval.yaml), [`hybrid.yaml`](hybrid.yaml) and
 [`grounding.yaml`](grounding.yaml); the hand labels in [`labels.yaml`](labels.yaml) and, on the rubric,
 in [`calibration.yaml`](calibration.yaml); the judge rubric in [`rubric.yaml`](rubric.yaml); the pipeline
-versions in [`versions.yaml`](versions.yaml); the gates in [`gates.yaml`](gates.yaml); saved runs under
-[`runs/`](runs/); the releases in [`releases.yaml`](releases.yaml). The files are versioned with the
+versions in [`versions.yaml`](versions.yaml); the gates in [`gates.yaml`](gates.yaml) and, per slice of
+the dataset, in [`matrix.yaml`](matrix.yaml); saved runs under [`runs/`](runs/); the regression baseline
+in [`baseline.yaml`](baseline.yaml); the releases in [`releases.yaml`](releases.yaml). The files are versioned with the
 code: a run's manifest records the git commit, the index, the retrieval configuration, the generator and
 a hash of the prompt, and its `lineage` the version of every stage that produced the answers (ingest,
 chunking, embedding model, index, prompt, retrieval; see [`docs/pipeline.md`](../docs/pipeline.md)), so a
@@ -324,3 +325,51 @@ judge (grounded, fabricated) and the stage 14 reader (relevant, agrees with the 
 against the same labels; the two readers against each other; and every answer where the grader and
 the person differ, with both reasons. It writes [`../reports/judge.md`](../reports/judge.md) and exits
 1 when a labelled answer has no grade; that is the PR check, with no model call.
+
+## 9. Evals as regression tests
+
+A change to the pipeline (a retriever setting, a reranker, a prompt, a model) is measured the same way
+every time: the records of section 6 through the changed pipeline (`dataset run --version <name>`),
+then the saved run against the baseline, slice by slice and record by record (`dataset compare`). The
+report is [`../reports/regression.md`](../reports/regression.md).
+
+**The baseline.** [`baseline.yaml`](baseline.yaml) pins the reference dataset run and the version of
+everything that produced it: the dataset (`<records>+<hash>` over every field of every record, which a
+run saved by `dataset run` carries on its manifest as `dataset`), the pipeline version, the retrieval
+configuration's version, the prompt's, the index's, the embedding model's, the chunking's, the generator
+and how it was called. `dataset baseline set --run <run>` writes it; `dataset baseline check` reads the
+run and the records back and exits 1 when anything no longer matches: the pin is stale when the records
+were edited after the baseline answered them (the baseline has to be run again under the same version)
+or when the run on disk is not the one the pin describes. `dataset compare` refuses a stale pin, so a
+comparison is always against the reference the pin names; `--baseline <run>` compares against any run
+instead.
+
+**The comparison.** Every metric of section 7 on every slice, before and after; the slice gates of
+[`matrix.yaml`](matrix.yaml) on the candidate against the baseline (the `no-drop` and `no-rise` rules
+now have a baseline to read); every record whose outcome, verdict or right-passage checks changed, as
+a win (holds now, did not before) or a loss (held, no longer does), with the answers behind each loss
+and the passages both runs read, and whether those passages were the same (then the flip is the
+generator's variance, not the change under test: a dataset run does not read the generation cache);
+and the matrix before and after. The two runs' manifests are compared
+field by field, so the report says what differs (retrieval alone, or the prompt, the index, the dataset
+too) and a change is attributed to the stage that changed.
+
+**The decision.** *Block* when a critical gate fails, on any slice, whatever the whole set did: the
+per-slice `no-drop` gates (adversarial, no-answer, the held-out split, the hard records, fact lookup)
+are what make a change that lifts the aggregate and drops a critical slice block anyway, and the report
+names the gates the aggregate would have hidden. *Hold* when every critical gate passes and the change
+still lost more records than it won, or the whole set holds fewer within the tolerance: the tolerances
+are one record's worth, so this is the case where the gates cannot tell noise from a regression and a
+person reads the losses. *Ship* otherwise, with the non-critical gates that failed as warnings. The
+tolerances are set by slice size, in [`matrix.yaml`](matrix.yaml): two records on a slice of 34 or more
+block, a slice of five or six warns. `dataset compare` exits 1 on *block*; `--no-block` writes the
+report and exits 0, for regenerating the committed record of an experiment that was not shipped. The
+PR check runs `dataset baseline check` and regenerates the committed comparison, and fails when the
+report drifts from what the saved runs say.
+
+```sh
+uv run infra-docs-rag dataset run --generator claude-code --version v4-rerank-50   # the candidate: every record through the changed pipeline
+uv run infra-docs-rag dataset compare --candidate dataset-v4-rerank-50-claude-code   # → reports/regression.md, exit 1 on block
+uv run infra-docs-rag dataset baseline check                                          # the pin against its run and the records
+uv run infra-docs-rag dataset baseline set --run <run> --note '…'                     # a shipped change becomes the next baseline
+```
