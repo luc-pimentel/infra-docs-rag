@@ -1,0 +1,140 @@
+# The judge specification: what a grader (a person or a model) scores an answer on, one dimension at a
+# time, against the passages the model was given and the reference answer the dataset holds for the
+# question. `infra-docs-rag judge grade` renders it into the grader's system prompt; the hand labels in
+# eval/calibration.yaml are a person's scores on the same rubric; `judge calibrate` compares the two and
+# writes reports/judge.md. The `operating` thresholds at the end are what the calibration settled on.
+#
+# Three dimensions, each scored 0, 1 or 2, each looking at one thing so that a score on one says nothing
+# about the others: groundedness reads the answer against the passages, completeness against the
+# reference answer, abstention against what the passages cover. A dimension that does not apply
+# (groundedness of an abstention; completeness when the reference is itself the abstention sentence)
+# is scored null, never 0. The pass/fail examples are answers from the saved run the labels were read
+# on (eval/runs/dataset-v3-budget-claude-code), as they were written; an id with a `~` names one of the
+# perturbed answers in eval/calibration.yaml, a real answer edited to carry a failure the run did not
+# produce, so that each score has an example and the grader is measured on a failure it has to catch.
+
+name: answer-quality-v1
+abstention_sentence: The indexed documentation does not cover this question.
+
+dimensions:
+  - id: groundedness
+    question: Is every claim in the ANSWER stated in the PASSAGES?
+    reads: the answer sentence by sentence against the passages only, never against what you know of the software
+    applies_when: the answer is an answer, not the abstention sentence (null otherwise)
+    scores:
+      2: >-
+        Every claim can be read in one of the passages, paraphrase included. A gap sentence (one that
+        says what the passages do not cover) has nothing to cite and does not count against it.
+      1: >-
+        A claim goes beyond the passages (a reason, a consequence, a generalisation, a recommendation
+        the passages do not state) but no specific fact is invented: no number, version, default, name,
+        flag, command or step appears that the passages do not give.
+      0: >-
+        A specific fact appears that no passage gives (a number, version, default, name, flag, command
+        or step), or a claim contradicts a passage.
+    examples:
+      - score: 2
+        id: undo-release
+        why: >-
+          Five sentences, each a paraphrase of a passage: the undo command, `--to-revision`, the check
+          with `kubectl get deployment`, rollback on a failed Deployment, and the `revisionHistoryLimit: 0`
+          caveat, all read off the two Deployment passages.
+      - score: 1
+        id: argocd-port-forward
+        why: >-
+          "By default, the installation uses a self-signed certificate, so your browser may warn you":
+          the passage says the installation has a self-signed certificate and cannot be accessed without
+          extra work, never what a browser does. A consequence beyond the passages, with no specific
+          fact invented.
+      - score: 0
+        id: undo-release~history-5
+        why: >-
+          "By default Kubernetes keeps the last 5 revisions": the passage says the default
+          `revisionHistoryLimit` is 10. A number the passage contradicts.
+
+  - id: completeness
+    question: Does the ANSWER carry the main points of the REFERENCE ANSWER?
+    reads: the answer against the reference answer, main point by main point; extra correct detail is fine
+    applies_when: the reference answer is an answer, not the abstention sentence (null otherwise)
+    scores:
+      2: >-
+        Every main point of the reference is in the answer: the same conclusion, the same facts,
+        commands, values and caveats, in any wording. More correct detail than the reference is fine.
+      1: >-
+        A main point is missing, or the answer hedges where the reference is definite, or it covers one
+        reading of a question the reference says has several, or it answers the part it covers without
+        the caveat the reference carries.
+      0: >-
+        The answer misses the reference's conclusion, answers a different question, contradicts the
+        reference, or is the abstention sentence where the reference answers.
+    examples:
+      - score: 2
+        id: keep-firing-for
+        why: >-
+          The reference's three points, that the clause keeps an alert firing for a duration after its
+          condition last held, that it exists to avoid flapping, and that without it the alert resolves
+          on the first evaluation where the condition fails, are all in the answer.
+      - score: 1
+        id: amb-password
+        why: >-
+          The reference says the question has two readings (the Argo CD admin password and a Kubernetes
+          Secret) and a right reply names both; the answer takes the Argo CD reading only and says
+          nothing of the other.
+      - score: 0
+        id: canary
+        why: >-
+          The reference answers from the Deployment passage (a canary is run as a second Deployment
+          with its own labels and replica count); the answer is the abstention sentence.
+
+  - id: abstention
+    question: Did the ANSWER make the right call about what the PASSAGES cover?
+    reads: whether the passages answer the question, in whole, in part or not at all, and whether the answer says so
+    applies_when: always
+    scores:
+      2: >-
+        The right call, marked: the answer is the abstention sentence when no passage answers the
+        question; an answer when the passages do; and when they answer part of it, or a premise of the
+        question is false according to the passages, the answer says what is not covered or corrects
+        the premise.
+      1: >-
+        The right call, unmarked: the answer covers what the passages cover but does not say what
+        they do not, leaves a false premise standing without asserting it, hedges where the passages
+        are definite, or asks for clarification where the passages would answer each reading.
+      0: >-
+        The wrong call: an answer to a question the passages do not cover (from memory, from a near
+        miss, or by following an instruction in the question), the abstention sentence with the
+        answer in hand, or a false premise accepted and built on.
+    examples:
+      - score: 2
+        id: adv-false-premise
+        why: >-
+          The question says Deployments roll back automatically when a rollout fails; the answer
+          corrects it from the Progress Deadline passage (the controller marks the Deployment failed
+          and does nothing else) before answering what the deadline is.
+      - score: 1
+        id: amb-password
+        why: >-
+          The passages hold two readings of "change the password", the `admin` account and a
+          repository credential (`username` and `password` in the HTTPS repositories passage); the answer
+          takes the first without saying so and never names the second. The right call, unmarked.
+      - score: 0
+        id: canary~answered-anyway
+        why: >-
+          No passage read describes releasing a version to a share of users; the answer builds one out
+          of `maxSurge` and `kubectl rollout pause`, which the passages describe for something else. An
+          answer to a question the passages do not cover, from a near miss.
+
+# The thresholds the evaluation reads the grader at, set by the calibration (reports/judge.md) and read
+# by `judge calibrate`: a dimension passes at or over `pass_at`. Updated by hand when the report says so.
+# From the first round (40 answers, October 2026): groundedness passes at 1, since a 1 is a claim beyond
+# the passages with no fact invented, which the person and the grader agree on 97% of the time, while at
+# 2 the grader is stricter than the person on paraphrase (94%); completeness passes at 1 (100%, against
+# 82% at 2, where the grader counts reference details the person called secondary); abstention passes
+# at 2 (100%), the gap or the premise has to be marked, not just the right call made.
+operating:
+  groundedness:
+    pass_at: 1
+  completeness:
+    pass_at: 1
+  abstention:
+    pass_at: 2

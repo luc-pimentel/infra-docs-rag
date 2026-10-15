@@ -10,7 +10,8 @@ uv run infra-docs-rag answer "How do I undo a bad release?"
 
 **Status:** the service is complete through the capstone ([`docs/capstone.md`](docs/capstone.md) is the
 design in one page, [`docs/demo.md`](docs/demo.md) the fifteen-minute demo); the evaluation track that
-follows it has started with the dataset (stage 13).
+follows it is three stages in: the dataset, the metrics by failure mode, and the judge calibrated against
+hand labels (stages 13 to 15).
 
 ## Architecture
 
@@ -126,7 +127,17 @@ Each stage ships into this repo, so the service grows with the checklist.
   context recall and precision against the named passages; scores overall and per slice; every failed
   record diagnosed as a retrieval or a generation problem; slice gates with blocker conditions, run as
   the PR check ([matrix](eval/matrix.yaml), [report](reports/metrics.md))
-- [ ] 15 · LLM-as-judge calibrated against human labels, second round
+- [x] 15 · LLM-as-judge calibrated against human labels: a rubric with three separable dimensions
+  (groundedness against the passages, completeness against the reference, abstention against what the
+  passages cover), scored 0 to 2 with a pass/fail example per score; a grader that scores an answer on
+  it through `claude -p` with a JSON schema and a one-sentence reason per score; a calibration set of 40
+  answers, 32 from the saved run and 8 perturbed to carry the failures the run never produced, each read
+  twice by independent readers and six disagreements resolved; the grader, the probability judge and
+  the reader measured against the person (exact agreement, weighted κ, confusion matrices, pass/fail
+  agreement at each threshold) and the operating thresholds set from it: the grader at 91%, 82% and 98%
+  exact, the fabricated ceiling moved from 0.50 to 0.85 where it catches every fabrication with no false
+  alarm, the reader's agreement question found weak (κ 0.42) and its gates left loose
+  ([rubric](eval/rubric.yaml), [labels](eval/calibration.yaml), [report](reports/judge.md))
 - [ ] 16 · Evals as regression tests for every change
 - [ ] 17 · Traces that explain why an eval fails
 - [ ] 18 · Prompts, retrieval config and eval assets versioned together
@@ -359,6 +370,19 @@ the gates.
   retrieval or a generation problem, applies the matrix and the gates, and writes the
   [report](reports/metrics.md); a failed critical gate exits 1, which is what the GitHub Actions check
   runs on the committed baseline run ([spec](eval/SPEC.md#7-metrics-by-failure-mode)).
+- **The judge rubric:** [`eval/rubric.yaml`](eval/rubric.yaml) is the judge specification: three
+  dimensions scored 0, 1 or 2 against one thing each (groundedness against the passages, completeness
+  against the reference answer, abstention against what the passages cover), with a pass/fail example
+  per score and the operating threshold each passes at. `judge grade` scores every answer in
+  [`eval/calibration.yaml`](eval/calibration.yaml) on it through `claude -p` with a JSON schema and
+  saves the scores and reasons under the run; the calibration set is a person's scores on the same
+  rubric for 40 answers, 32 as the run wrote them and 8 perturbed (a real answer with one failure
+  written in: a fact the passage contradicts, an answer from memory, a premise accepted), every one
+  read twice by independent readers and resolved where they differed. `judge calibrate` compares the
+  grader, the probability judge and the reader to the person (exact agreement, weighted κ, confusion
+  matrix, pass/fail agreement at each threshold), the two readers to each other, and writes the
+  [report](reports/judge.md); it exits 1 when a labelled answer has no grade, which is the GitHub
+  Actions check ([spec](eval/SPEC.md#8-the-judge-rubric-and-its-calibration)).
 
 ## Orchestration
 
@@ -499,6 +523,8 @@ uv run infra-docs-rag dataset generate --n 30 --seed 13          # a testset fro
 uv run infra-docs-rag dataset report                             # check, then reports/dataset.md and eval/dataset/schema.json
 uv run infra-docs-rag dataset run --generator claude-code        # every record through the release, judged and read; saves eval/runs/dataset-<version>-claude-code/
 uv run infra-docs-rag dataset metrics --run dataset-v3-budget-claude-code   # the matrix, per-slice scores and gates → reports/metrics.md; exit 1 on a failed critical gate
+uv run infra-docs-rag judge grade                                            # score the answers in eval/calibration.yaml on eval/rubric.yaml through claude -p → eval/runs/<run>/grades.json
+uv run infra-docs-rag judge calibrate                                        # the grader, the judge and the reader against the hand labels → reports/judge.md; exit 1 when a label has no grade
 uv run pytest
 ```
 

@@ -115,10 +115,14 @@ class JevJudge:
         return [self.binary, "eval", "-f", str(self.request), "--state-file", "-", "-o", "json"]
 
     def judge(self, context: Context, question: str, answer_text: str) -> Judgement:
+        return self.read_state(state(context, question, answer_text))
+
+    def read_state(self, text: str) -> Judgement:
+        """The three readings over a state already written (`state` or `state_of`)."""
         try:
             done = subprocess.run(
                 self.command(),
-                input=state(context, question, answer_text),
+                input=text,
                 capture_output=True,
                 text=True,
                 timeout=CLI_TIMEOUT,

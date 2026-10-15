@@ -88,9 +88,16 @@ class Reader(Protocol):
 def reading_state(context: Context, question: str, reference: str, answer_text: str) -> str:
     """What the reader sees: the passages under the headings the model saw, the question, the
     reference answer, the answer with its markers."""
+    return reading_state_of(
+        [(s.heading, s.chunk.text) for s in context.sources], question, reference, answer_text
+    )
+
+
+def reading_state_of(passages: list[tuple[str, str]], question: str, reference: str, answer_text: str) -> str:
+    """The state from (heading, text) pairs; the heading already starts with `[n]`."""
     lines = ["PASSAGES"]
-    for s in context.sources:
-        lines.append(f"{s.heading}\n{s.chunk.text}")
+    for heading, text in passages:
+        lines.append(f"{heading}\n{text}")
     lines += ["", "QUESTION", question, "", "REFERENCE ANSWER", reference, "", "ANSWER", answer_text]
     return "\n".join(lines)
 
@@ -108,10 +115,14 @@ class JevReader:
         return [self.binary, "eval", "-f", str(self.request), "--state-file", "-", "-o", "json"]
 
     def read(self, context: Context, question: str, reference: str, answer_text: str) -> Reading:
+        return self.read_state(reading_state(context, question, reference, answer_text))
+
+    def read_state(self, text: str) -> Reading:
+        """The four readings over a state already written (`reading_state` or `reading_state_of`)."""
         try:
             done = subprocess.run(
                 self.command(),
-                input=reading_state(context, question, reference, answer_text),
+                input=text,
                 capture_output=True,
                 text=True,
                 timeout=CLI_TIMEOUT,
