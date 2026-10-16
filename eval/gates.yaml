@@ -67,3 +67,23 @@ gates:
     value: 15000
     critical: false
     why: fifteen seconds a question on CPU is the limit of what a person waits for
+
+  # Budgets (stage 20): the limits a release may not cross whatever the quality gain. Set from the
+  # saved runs: v3 answers at $0.040 a question and 10.1 s at the 95th percentile.
+  - metric: cost.usd_per_request
+    rule: max
+    value: 0.06
+    why: six cents a question at list price is sixty dollars a thousand; the budget leaves room for a better generator, not for a pipeline that reads twice the passages
+
+  - metric: latency.end_to_end_ms_p95
+    rule: max
+    value: 15000
+    why: fifteen seconds for one question in twenty is the limit of what a person waits for; the median gate above warns, this one blocks
+
+  - metric: cache.hit_share
+    rule: min
+    value: 0.9
+    skip_unmeasured: true
+    critical: false
+    why: a replay through the cache should answer nine questions in ten without a call; a run that made no cached call is not measured here
+

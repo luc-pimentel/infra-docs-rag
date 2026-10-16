@@ -66,6 +66,8 @@ Each gate reads one metric on one slice: `min` and `max` against a fixed value, 
 | `category=multi-hop` | 5 | `hops.covered` | must not drop by more than 0.2 | 4/5 (80%) | 4/5 (80%) | +0% | pass | five records; one fewer answer citing both passages warns, it cannot block |
 | `category=stale` | 6 | `stale.deprecation_named` | must not drop by more than 0.2 | 5/5 (100%) | 5/5 (100%) | +0% | pass | six records read by the reader's least calibrated question; a warning |
 | `category=ambiguous` | 5 | `ambiguity.readings_named` | must not drop by more than 0.2 | 4/5 (80%) | 4/5 (80%) | +0% | pass | five records; a warning |
+| `all` | 74 | `cost.usd_per_request` | ≤ 0.06 | $0.0412 | $0.0431 | +$0.0020 | pass | the release budget, on the dataset run; the baseline answers at $0.041 |
+| `all` | 74 | `latency.end_to_end_ms_p95` | ≤ 15000 | 9,089 ms | 11,662 ms | +2,573 ms | pass | the release budget, on the dataset run; the baseline's p95 is 9.1 s, v4's 11.7 s |
 
 **Hidden by the aggregate.** `answers.held` over the whole set went from 65/74 (88%) to 65/74 (88%), flat, and 1 critical gate(s) still fail on a slice: `category=adversarial` `answers.held` 7/9 (78%) → 5/9 (56%), -22%. A score over every record would have shipped this change; the slice gates are what catch it.
 

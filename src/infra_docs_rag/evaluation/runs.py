@@ -69,6 +69,7 @@ class GeneratedRecord(BaseModel):
     ms: float
     unverified: int = 0
     refusal: str | None = None
+    cached: bool = False  # answered from the generation cache: no call was made (stage 20)
 
 
 class ReadingRecord(BaseModel):
@@ -278,6 +279,7 @@ def record(c: Case) -> CaseRecord:
             ms=g.ms,
             unverified=g.unverified,
             refusal=g.refusal,
+            cached=g.cached,
         )
         if g
         else None,

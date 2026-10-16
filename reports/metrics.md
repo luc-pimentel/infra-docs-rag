@@ -243,6 +243,8 @@ The pass/fail rules a change has to clear, each on one slice. A critical gate th
 | `category=multi-hop` | `hops.covered` | must not drop by more than 0.2 | 4/5 (80%) | skipped | five records; one fewer answer citing both passages warns, it cannot block |
 | `category=stale` | `stale.deprecation_named` | must not drop by more than 0.2 | 5/5 (100%) | skipped | six records read by the reader's least calibrated question; a warning |
 | `category=ambiguous` | `ambiguity.readings_named` | must not drop by more than 0.2 | 4/5 (80%) | skipped | five records; a warning |
+| `all` | `cost.usd_per_request` | ≤ 0.06 | $0.0412 | pass | the release budget, on the dataset run; the baseline answers at $0.041 |
+| `all` | `latency.end_to_end_ms_p95` | ≤ 15000 | 9,089 ms | pass | the release budget, on the dataset run; the baseline's p95 is 9.1 s, v4's 11.7 s |
 
 ## 5. Reading the report
 
