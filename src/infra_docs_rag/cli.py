@@ -1,6 +1,6 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | judge grade | judge calibrate | evaluate-pipeline | evaluate-efficiency | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | dataset freeze | online sample | online judge | online report | online promote | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+calibrate | judge grade | judge calibrate | evaluate-pipeline | evaluate-efficiency | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | dataset freeze | online sample | online judge | online report | online promote | safety run | safety grade | traces | pipeline run | pipeline status | pipeline index | pipeline release |
 pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
@@ -85,6 +85,11 @@ from .evaluation.regression_report import write_report as write_regression_repor
 from .evaluation.report import write_report as write_evaluation_report
 from .evaluation.rubric import GRADES, GradeSet, RubricGrader, grader_version, load_rubric, new_grade_set
 from .evaluation.runs import RUNS_DIR, JudgementRecord, ReadingRecord, Run, from_grounding
+from .evaluation.safety import SAFETY, SAFETY_REPORT, grade_run, run_safety, safety_for, safety_runs
+from .evaluation.safety import load_policy as load_safety_policy
+from .evaluation.safety import run_name as safety_run_name
+from .evaluation.safety_report import held_shown
+from .evaluation.safety_report import write_report as write_safety_report
 from .evaluation.slices import (
     check_matrix,
     check_slice_gates,
@@ -815,6 +820,38 @@ def main(argv: list[str] | None = None) -> None:
         "--version", help="a version from eval/versions.yaml (default: the current release)"
     )
     serve_cmd.add_argument("--no-cache", action="store_true", help="no generation cache")
+    safety_cmd = commands.add_parser(
+        "safety",
+        help=f"the safety policy ({SAFETY}): answer its records through a version and grade the replies → {SAFETY_REPORT}",
+    )
+    safety_sub = safety_cmd.add_subparsers(dest="safety_command", required=True)
+    safety_run_cmd = safety_sub.add_parser(
+        "run",
+        help="answer every policy record under a version, judge, grade, save eval/runs/safety-<version>-<generator>/",
+    )
+    safety_run_cmd.add_argument(
+        "--generator",
+        choices=list(GENERATORS),
+        default=DEFAULT_GENERATOR,
+        help=f"default {DEFAULT_GENERATOR}",
+    )
+    safety_run_cmd.add_argument("--effort", default=DEFAULT_EFFORT, help=f"default {DEFAULT_EFFORT}")
+    safety_run_cmd.add_argument(
+        "--version", default=None, help="a version from eval/versions.yaml (default: the current release)"
+    )
+    safety_run_cmd.add_argument(
+        "--save", metavar="NAME", help="save as eval/runs/NAME/ (default safety-<version>-<generator>)"
+    )
+    safety_run_cmd.add_argument("--no-judge", action="store_true", help="skip the jev reading of each answer")
+    safety_grade_cmd = safety_sub.add_parser(
+        "grade",
+        help=f"grade every saved safety run under the current policy and write {SAFETY_REPORT}; exit 1 when the release's version blocks",
+    )
+    safety_grade_cmd.add_argument(
+        "--no-block",
+        action="store_true",
+        help="write the report and exit 0 whatever the release's verdict: for regenerating the committed record",
+    )
     online_cmd = commands.add_parser(
         "online",
         help=f"the online evaluation ({POLICY}): sample a window of live traffic, judge the samples, report drift, promote failures into the dataset",
@@ -963,6 +1000,98 @@ def main(argv: list[str] | None = None) -> None:
             )
             write_latency_report(workload, runs, LATENCY_REPORT)
             print(f"wrote {LATENCY_REPORT}")
+        elif args.command == "safety":
+            policy = load_safety_policy(SAFETY)
+            if args.safety_command == "run":
+                version, pinned = pipeline_commands.resolve_version(args.version)
+                name = args.save or safety_run_name(version.name, args.generator)
+                r, index, index_id = retriever(version, pinned)
+                gen = load_generator(args.generator, args.effort, version.prompt)
+                prompt = load_prompt(version.prompt)
+                lineage = pipeline_commands.lineage(version, index, index_id, prompt, gen.name, gen.model)
+                log = TraceLog(TRACES)
+                traced: list = []
+
+                def trace_safety(a, j, rec):
+                    t = trace_answer(
+                        a,
+                        f"{version.name}:{name}",
+                        lineage,
+                        prompt.version(gen.name),
+                        j,
+                        gen.prices,
+                        example_id=rec.id,
+                        run=name,
+                    )
+                    log.append(t)
+                    traced.append(t)
+                    return t.trace_id
+
+                print(
+                    f"{len(policy.records)} safety records through {version.name} ({version.retrieval.label}) with {gen.model} via {gen.name}"
+                )
+                grounding = run_safety(
+                    policy,
+                    index,
+                    r,
+                    gen,
+                    version.retrieval,
+                    None if args.no_judge else load_judge(),
+                    tracer=trace_safety,
+                )
+                lineage = lineage.model_copy(update={"generator": grounding.generator})
+                saved = from_grounding(grounding, name, version.name, version.description, lineage)
+                saved.manifest.experiment = ExperimentManifest.of(
+                    saved.manifest, None, grader_version(load_rubric())
+                )
+                run_dir = RUNS_DIR / saved.name
+                saved.save(run_dir)
+                save_traces(traced, run_dir)
+                grades = grade_run(saved, policy)
+                grades.save(run_dir)
+                v = grades.verdict(policy.thresholds)
+                for x in grades.grades:
+                    print(f"{x.label:18} {x.id}" + (f": {'; '.join(x.reasons)}" if x.reasons else ""))
+                print(
+                    f"{'BLOCKS' if v.blocked else 'passes'}: {grades.counts()}"
+                    + (f"; {'; '.join(v.reasons)}" if v.reasons else "")
+                )
+                print(f"saved {run_dir}/; next: `safety grade` for the report")
+                return
+            graded = []
+            for run in safety_runs(RUNS_DIR):
+                grades = grade_run(run, policy)
+                grades.save(RUNS_DIR / run.name)
+                graded.append((run, grades))
+            quality = {}
+            pin = Baseline.load(BASELINE) if BASELINE.exists() else None
+            if pin:
+                base_run = Run.load(RUNS_DIR / pin.run)
+                quality[base_run.manifest.version] = (base_run.name, held_shown(base_run))
+                for d in sorted(RUNS_DIR.iterdir()):
+                    if d.name.startswith("dataset-") and (d / "manifest.json").exists():
+                        other = Run.load(d)
+                        if (
+                            other.manifest.dataset == base_run.manifest.dataset
+                            and other.manifest.version not in quality
+                        ):
+                            quality[other.manifest.version] = (other.name, held_shown(other))
+            write_safety_report(policy, graded, quality, SAFETY_REPORT)
+            blocked_release = False
+            live = Releases.load(RELEASES).live
+            for run, grades in graded:
+                v = grades.verdict(policy.thresholds)
+                print(f"{run.name}: {'BLOCKS' if v.blocked else 'passes'} {grades.counts()}")
+                if live and run.manifest.version == live.manifest.version and v.blocked:
+                    blocked_release = True
+            print(f"wrote {SAFETY_REPORT}")
+            if blocked_release and not args.no_block:
+                parser.exit(1, "the current release's version blocks under the safety policy\n")
+            if blocked_release:
+                print(
+                    "the current release's version blocks under the safety policy; the next release has to pass it"
+                )
+            return
         elif args.command == "online":
             log = TraceLog(TRACES)
             policy = load_policy(POLICY)
@@ -1155,7 +1284,18 @@ def main(argv: list[str] | None = None) -> None:
                         1,
                         "refused: the eval assets moved since the freeze; `dataset freeze` deliberately, then release\n",
                     )
-                if pipeline_commands.release(args, INDEX_DIR, frozen=frozen):
+                candidate_version = Run.load(RUNS_DIR / args.candidate).manifest.version
+                safety_policy = load_safety_policy(SAFETY)
+                found = safety_for(candidate_version)
+                if found is None:
+                    parser.exit(
+                        1,
+                        f"refused: no graded safety run for {candidate_version}; `safety run --version {candidate_version}` first\n",
+                    )
+                safety_verdict = found[1].verdict(safety_policy.thresholds)
+                if pipeline_commands.release(
+                    args, INDEX_DIR, frozen=frozen, safety=(found[0].name, not safety_verdict.blocked)
+                ):
                     parser.exit(1)
             elif args.pipeline_command == "rollback":
                 pipeline_commands.roll_back(INDEX_DIR)
@@ -1372,9 +1512,22 @@ def main(argv: list[str] | None = None) -> None:
                 cand_run = Run.load(RUNS_DIR / args.candidate)
                 if cand_run.name == base_run.name:
                     raise ValueError(f"{args.candidate} is the baseline; name another run with --candidate")
+                safety_policy = load_safety_policy(SAFETY) if SAFETY.exists() else None
+                found = safety_for(cand_run.manifest.version) if safety_policy else None
                 reg = compare_dataset_runs(
-                    base_run, cand_run, ds.records, load_matrix(), allow_confounded=args.allow_confounded
+                    base_run,
+                    cand_run,
+                    ds.records,
+                    load_matrix(),
+                    allow_confounded=args.allow_confounded,
+                    safety=(found[0].name, found[1], found[1].verdict(safety_policy.thresholds))
+                    if found
+                    else None,
                 )
+                if found is None:
+                    print(
+                        f"warning: no graded safety run for {cand_run.manifest.version}; `safety run --version {cand_run.manifest.version}`"
+                    )
                 if reg.missing:
                     print(
                         f"warning: {len(reg.missing)} records are not in both runs and are left out ({', '.join(reg.missing[:5])}{'…' if len(reg.missing) > 5 else ''})"

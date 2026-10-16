@@ -20,6 +20,7 @@ from .experiment import VARIABLES
 from .gates import Changed
 from .metrics import Metric
 from .runs import Run, git_sha
+from .safety import SafetyGrades, Verdict
 from .slices import (
     ALL,
     MatrixFile,
@@ -176,6 +177,10 @@ class Regression:
     variables: list[tuple[str, str, str]] = field(
         default_factory=list
     )  # (variable, baseline, candidate) per VARIABLES, from the experiment manifests
+    safety: Verdict | None = (
+        None  # the candidate version's latest graded safety run (stage 21); None when it has none
+    )
+    safety_run: str | None = None
 
     @property
     def confounded(self) -> bool:
@@ -227,11 +232,15 @@ class Regression:
         return [g for g in self.blocking if g.gate.slice != ALL and self.aggregate_delta >= 0]
 
     @property
+    def safety_blocked(self) -> bool:
+        return self.safety is not None and self.safety.blocked
+
+    @property
     def decision(self) -> Decision:
-        """`block` when a critical gate fails; `hold` when the gates pass and the change still lost more
-        records than it won, or the whole set holds fewer (within tolerance): a person decides; `ship`
-        otherwise."""
-        if self.blocking:
+        """`block` when a critical gate fails or the candidate's safety run blocks; `hold` when the gates
+        pass and the change still lost more records than it won, or the whole set holds fewer (within
+        tolerance): a person decides; `ship` otherwise."""
+        if self.blocking or self.safety_blocked:
             return "block"
         if len(self.losses) > len(self.wins) or self.aggregate_delta < 0:
             return "hold"
@@ -243,22 +252,31 @@ class Regression:
         head = f"{b.shown} → {a.shown} held over the whole set"
         tally = f"{len(self.wins)} record(s) won, {len(self.losses)} lost"
         if self.decision == "block":
+            if self.safety_blocked and not self.blocking:
+                return (
+                    f"blocked on safety: {'; '.join(self.safety.reasons)} (run {self.safety_run}); the quality gates pass, "
+                    f"so helpfulness alone would have shipped it; {head}; {tally}"
+                )
             where = ", ".join(f"`{g.gate.slice}` {g.gate.metric}" for g in self.blocking)
+            if self.safety_blocked:
+                where += f"; and safety: {'; '.join(self.safety.reasons)}"
             masked = (
                 f"; the whole set {'improved' if self.aggregate_improved else 'held as many'}, so the aggregate would have hidden {'it' if len(self.masked) == 1 else 'them'}"
                 if self.masked
                 else ""
             )
             return f"blocked: {len(self.blocking)} critical gate(s) failed ({where}){masked}; {head}; {tally}"
+        no_safety = "; no safety run for the candidate version" if self.safety is None else ""
         if self.decision == "hold":
             why = (
                 "more records lost than won"
                 if len(self.losses) > len(self.wins)
                 else "the whole set holds fewer, within the tolerance"
             )
-            return f"hold: every critical gate passes but {why}; {head}; {tally}"
+            return f"hold: every critical gate passes but {why}; {head}; {tally}{no_safety}"
         warn = f" with {len(self.warnings)} warning(s)" if self.warnings else ""
-        return f"ship{warn}: every critical gate passes; {head}; {tally}"
+        safe = f"; safety passes on {self.safety_run}" if self.safety is not None else no_safety
+        return f"ship{warn}: every critical gate passes; {head}; {tally}{safe}"
 
 
 def same_passages(x: Changed) -> bool:
@@ -293,6 +311,7 @@ def compare(
     records: list[Record],
     matrix: MatrixFile,
     allow_confounded: bool = False,
+    safety: tuple[str, SafetyGrades, Verdict] | None = None,
 ) -> Regression:
     """The candidate against the baseline on the records both answered. Refused when the two runs differ
     in more than one variable (a controlled comparison changes one thing), unless `allow_confounded`."""
@@ -338,6 +357,8 @@ def compare(
         ]
         if baseline.manifest.experiment and candidate.manifest.experiment
         else [],
+        safety=safety[2] if safety else None,
+        safety_run=safety[0] if safety else None,
     )
 
 

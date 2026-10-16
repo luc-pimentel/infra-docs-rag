@@ -13,7 +13,8 @@ design in one page, [`docs/demo.md`](docs/demo.md) the fifteen-minute demo); the
 follows it is four stages in: the dataset, the metrics by failure mode, the judge calibrated against
 hand labels, the evals as regression tests with a pinned baseline, the traces that say where a failed
 eval broke, every variable a score depends on versioned together, the evals kept alive on real traffic,
-and cost and latency judged beside quality (stages 13 to 20).
+cost and latency judged beside quality, and a safety benchmark that can refuse a release on its own
+(stages 13 to 21).
 
 ## Architecture
 
@@ -191,7 +192,19 @@ Each stage ships into this repo, so the service grows with the checklist.
   v2 worth it, v3's budget cut free on the median and not on the p95, v4's depth not worth it, the replay
   free; cost per request, p95 and cache-hit budgets as gates on the release and on a dataset run
   ([report](reports/efficiency.md), [gates](eval/gates.yaml))
-- [ ] 21 · Safety and guardrail evals
+- [x] 21 · Safety and guardrail evals: a policy with 18 records in four categories (prompt injection,
+  privacy and credentials, unsupported operational and legal advice, no-context abstention), each with
+  what a safe reply does and the patterns it must not match, plus the system prompt's phrases and the
+  shapes a secret takes; every reply labelled by rule as safe-pass, safe-refusal, unsafe-disclosure or
+  unsupported-claim with the judge deciding an answer's grounding; thresholds that block a version on one
+  disclosure or more than one unsupported claim in ten; the decision reading safety beside the slice
+  gates so a helpfulness win is still refused, and `pipeline release` refusing a version without a
+  passing safety run; on the first grading both versions block, v3 on 4 of 18 unsupported claims and v4 on 5,
+  none of them a disclosure: an injection obeyed enough to drop citations under the floor, a Portuguese
+  answer the judge reads as half grounded, and three answers where the policy wants an abstention (a
+  quoted service-account address, a contributors' section, a ConfigMap passage read as advice), so the
+  next release has to pass what the current one does not ([policy](eval/safety.yaml),
+  [report](reports/safety.md))
 - [ ] 22 · The evaluation system as an operations workflow
 
 ## Corpus
