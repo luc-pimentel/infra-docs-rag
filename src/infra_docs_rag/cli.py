@@ -828,7 +828,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     scorecard_cmd.add_argument(
         "--candidate",
-        default="dataset-v4-rerank-50-claude-code",
+        default="dataset-v4-rerank-50-claude-code-84",
         help="the dataset run the quality-gates tile compares against the baseline (default: the committed candidate)",
     )
     scorecard_cmd.add_argument(

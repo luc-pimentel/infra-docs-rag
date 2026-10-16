@@ -11,6 +11,7 @@ from infra_docs_rag.evaluation.dataset import (
     CATEGORIES,
     FAILURE_MODES,
     OBSERVABLE,
+    SIZE,
     Audit,
     AuditEntry,
     BenchmarkIndex,
@@ -420,7 +421,7 @@ def test_the_json_schema_names_every_failure_mode():
 
 def test_the_repo_dataset_loads_checks_and_matches_its_schema_file():
     ds = load_dataset(ROOT / "eval/dataset")
-    assert 30 <= len(ds.curated.records) <= 50
+    assert SIZE[0] <= len(ds.curated.records) <= SIZE[1]
     assert {r.category for r in ds.curated.records} == set(CATEGORIES)
     assert {r.split for r in ds.curated.records} == {"dev", "test"}
     chunks_file = ROOT / "data/chunks" / f"{ds.curated.chunking}.jsonl"

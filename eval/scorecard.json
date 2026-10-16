@@ -8,7 +8,7 @@
     {
       "component": "baseline",
       "state": "ok",
-      "detail": "`dataset-v3-budget-claude-code`, dataset 74+e1454a76bb7b"
+      "detail": "`dataset-v3-budget-claude-code-84`, dataset 84+2849da92d4f8"
     },
     {
       "component": "freeze",
@@ -18,7 +18,7 @@
     {
       "component": "quality gates",
       "state": "fail",
-      "detail": "`dataset-v4-rerank-50-claude-code` against the baseline: block; blocked: 1 critical gate(s) failed (`category=adversarial` answers.held"
+      "detail": "`dataset-v4-rerank-50-claude-code-84` against the baseline: block; blocked on safety: 5 of 18 unsupported claims (28%)"
     },
     {
       "component": "safety",
@@ -124,6 +124,38 @@
             "cost.usd_per_request": 0.043130864864864865,
             "latency.end_to_end_ms_p95": 11662.03345800098
           }
+        },
+        {
+          "run": "dataset-v3-budget-claude-code-84",
+          "version": "v3-budget",
+          "date": "2026-10-16",
+          "values": {
+            "answers.held": 0.8809523809523809,
+            "retrieval.right_retrieved": 0.9152542372881356,
+            "retrieval.context_recall": null,
+            "grounding.judge_grounded": 1.0,
+            "grounding.judge_fabricated": 0.0,
+            "abstention.in_scope": 0.05,
+            "abstention.out_of_scope": 1.0,
+            "cost.usd_per_request": 0.03762599523809523,
+            "latency.end_to_end_ms_p95": 9857.502249995654
+          }
+        },
+        {
+          "run": "dataset-v4-rerank-50-claude-code-84",
+          "version": "v4-rerank-50",
+          "date": "2026-10-16",
+          "values": {
+            "answers.held": 0.8690476190476191,
+            "retrieval.right_retrieved": 0.9322033898305084,
+            "retrieval.context_recall": null,
+            "grounding.judge_grounded": 1.0,
+            "grounding.judge_fabricated": 0.0,
+            "abstention.in_scope": 0.03333333333333333,
+            "abstention.out_of_scope": 1.0,
+            "cost.usd_per_request": 0.03172199761904762,
+            "latency.end_to_end_ms_p95": 13397.062334001472
+          }
         }
       ]
     }
@@ -133,12 +165,16 @@
       "slice": "category=adversarial",
       "values": [
         0.7777777777777778,
-        0.5555555555555556
+        0.5555555555555556,
+        0.7,
+        0.8
       ]
     },
     {
       "slice": "category=no-answer",
       "values": [
+        1.0,
+        1.0,
         1.0,
         1.0
       ]
@@ -147,21 +183,27 @@
       "slice": "split=test",
       "values": [
         0.8727272727272727,
-        0.8545454545454545
+        0.8545454545454545,
+        0.8615384615384616,
+        0.8615384615384616
       ]
     },
     {
       "slice": "difficulty=hard",
       "values": [
         0.8823529411764706,
-        0.8823529411764706
+        0.8823529411764706,
+        0.7941176470588235,
+        0.8529411764705882
       ]
     },
     {
       "slice": "category=fact-lookup",
       "values": [
         0.8372093023255814,
-        0.8837209302325582
+        0.8837209302325582,
+        0.8409090909090909,
+        0.7954545454545454
       ]
     }
   ],

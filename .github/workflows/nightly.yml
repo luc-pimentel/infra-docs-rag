@@ -32,11 +32,11 @@ jobs:
       - name: the saved-run checks
         run: |
           uv run infra-docs-rag evaluate-pipeline --baseline v2-hybrid-rerank-claude-code --candidate v3-budget-claude-code
-          uv run infra-docs-rag dataset metrics --run dataset-v3-budget-claude-code
+          uv run infra-docs-rag dataset metrics --run dataset-v3-budget-claude-code-84
           uv run infra-docs-rag dataset baseline check
           uv run infra-docs-rag dataset freeze --check
-          uv run infra-docs-rag dataset compare --candidate dataset-v4-rerank-50-claude-code --no-block
-          uv run infra-docs-rag dataset diagnose --run dataset-v3-budget-claude-code --run dataset-v4-rerank-50-claude-code
+          uv run infra-docs-rag dataset compare --candidate dataset-v4-rerank-50-claude-code-84 --no-block
+          uv run infra-docs-rag dataset diagnose --run dataset-v3-budget-claude-code-84 --run dataset-v4-rerank-50-claude-code-84
           uv run infra-docs-rag online report
           uv run infra-docs-rag evaluate-efficiency
           uv run infra-docs-rag safety grade

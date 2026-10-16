@@ -16,7 +16,7 @@ from infra_docs_rag.evaluation.experiment import (
     file_version,
 )
 from infra_docs_rag.evaluation.gates import Gate
-from infra_docs_rag.evaluation.regression import compare, differences
+from infra_docs_rag.evaluation.regression import Baseline, compare, differences
 from infra_docs_rag.evaluation.regression_report import write_report
 from infra_docs_rag.evaluation.rubric import grader_version, load_rubric
 from infra_docs_rag.evaluation.runs import RUNS_DIR, Run
@@ -172,7 +172,8 @@ def test_the_repo_freeze_holds_and_every_run_carries_an_experiment():
 
     runs = [Run.load(d) for d in sorted((ROOT / RUNS_DIR).iterdir()) if (d / "manifest.json").exists()]
     assert runs and all(r.manifest.experiment is not None for r in runs)
-    baseline = next(r for r in runs if r.name == "dataset-v3-budget-claude-code")
+    pin = Baseline.load(ROOT / "eval/baseline.yaml")
+    baseline = next(r for r in runs if r.name == pin.run)
     current = Frozen.now(
         dataset_version(ds.records),
         grader_version(load_rubric(ROOT / "eval/rubric.yaml")),
