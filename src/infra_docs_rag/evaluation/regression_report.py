@@ -101,17 +101,27 @@ def write_report(reg: Regression, output: Path, default_baseline: bool = True) -
         f"| Run | {b.created_at[:10]} at `{b.git_sha}` on {b.machine} | {c.created_at[:10]} at `{c.git_sha}` on {c.machine} |"
     )
     w("")
+    if reg.variables:
+        w("The variables that move a score, from the two experiment manifests:")
+        w("")
+        w("| Variable | Baseline | Candidate | |")
+        w("|---|---|---|---|")
+        for name, before_v, after_v in reg.variables:
+            w(f"| {name} | `{before_v}` | `{after_v}` | {'**differs**' if name in reg.differs else 'same'} |")
+        w("")
     if not reg.differs:
         w(
             "Nothing differs between the two runs' manifests: the same pipeline on the same dataset, run twice."
         )
     elif reg.differs == ["retrieval"]:
         w("The two runs differ in retrieval only, so every change below is the retrieval's.")
+    elif len(reg.differs) == 1:
+        w(f"The two runs differ in {reg.differs[0]} only, so every change below is that variable's.")
     else:
         w(
-            "The two runs differ in "
+            "**Confounded.** The two runs differ in "
             + ", ".join(reg.differs)
-            + ", so a change below is not one stage's alone."
+            + ", so a change below cannot be attributed to one of them; the comparison ran with `--allow-confounded`."
         )
     w("")
     hb, ha = reg.headline()

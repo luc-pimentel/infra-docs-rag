@@ -73,5 +73,27 @@
     "eval_run_id": "v3-budget-claude-code",
     "git_sha": "552cd9f",
     "created_at": "2026-10-12T22:23:07+00:00"
+  },
+  "dataset": null,
+  "experiment": {
+    "version": "v3-budget",
+    "retrieval_version": "v3-budget+a9ed5d977ad2",
+    "prompt_version": "cite-v1+e732a9f0cc40",
+    "ingest_version": "0.1.0+8e4b1a0",
+    "chunking_version": "section-aware-512-64-context+825a7940b716",
+    "embedding_version": "BAAI/bge-small-en-v1.5@5c38ec7c405e",
+    "index_version": "3971d9f1e10e",
+    "generator": "claude-opus-5-5",
+    "backend": "claude-code",
+    "effort": "medium",
+    "dataset_version": null,
+    "benchmark_version": "benchmark+de191035db86",
+    "grader_version": "answer-quality-v1+11392d5a1f8c",
+    "judge": "jev-1.13.0",
+    "matrix_version": "matrix+f90313c126e2",
+    "gates_version": "gates+cb9f511e3e24",
+    "safety_version": "none",
+    "git_sha": "cd0b286",
+    "created_at": "2026-10-16T00:51:28+00:00"
   }
 }

@@ -1,0 +1,17 @@
+# The freeze: the eval assets a release decision is read under, pinned by content hash. The
+# dataset and the benchmark questions, the grader (the rubric's prompt) and the judge, the gates
+# and the matrix, the safety policy. `dataset freeze --check` and `pipeline release` compare the
+# files to this and refuse when one has moved: a decision is taken under a named set of assets,
+# and changing one is a deliberate `dataset freeze`, not a side effect. Written by
+# `infra-docs-rag dataset freeze`; do not edit by hand.
+dataset_version: 74+e1454a76bb7b
+benchmark_version: benchmark+de191035db86
+grader_version: answer-quality-v1+11392d5a1f8c
+judge: jev-1.13.0
+matrix_version: matrix+f90313c126e2
+gates_version: gates+cb9f511e3e24
+safety_version: none
+frozen_at: '2026-10-16T00:51:29+00:00'
+git_sha: cd0b286
+note: 'the stage 18 freeze: the dataset, benchmark, rubric, gates and matrix the v3
+  baseline and the v4 comparison were read under'

@@ -7,7 +7,7 @@ the decision: a critical slice that drops past its tolerance blocks the change e
 improves, because the aggregate can rise on the easy records while the ones the slice was built to
 watch quietly fail."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -16,6 +16,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from .dataset import Record, dataset_version
+from .experiment import VARIABLES
 from .gates import Changed
 from .metrics import Metric
 from .runs import Run, git_sha
@@ -172,6 +173,14 @@ class Regression:
     changed: list[Changed]
     differs: list[str]  # what is not the same between the two runs: stage versions, dataset, generator…
     missing: list[str]  # record ids one of the runs did not answer
+    variables: list[tuple[str, str, str]] = field(
+        default_factory=list
+    )  # (variable, baseline, candidate) per VARIABLES, from the experiment manifests
+
+    @property
+    def confounded(self) -> bool:
+        """More than one variable differs: a change below cannot be attributed to one of them."""
+        return len(self.differs) > 1
 
     @property
     def wins(self) -> list[Changed]:
@@ -257,9 +266,12 @@ def same_passages(x: Changed) -> bool:
 
 
 def differences(baseline: Run, candidate: Run) -> list[str]:
-    """What is not the same between the two runs, by name: the stage versions from the lineage, the
+    """What is not the same between the two runs, by name. With an experiment manifest on both (stage
+    18), the variables of `experiment.VARIABLES`; without, the stage versions from the lineage, the
     dataset, the generator and how it was called, the prompt, the effort, the judge."""
     b, c = baseline.manifest, candidate.manifest
+    if b.experiment is not None and c.experiment is not None:
+        return b.experiment.differs(c.experiment)
     out: list[str] = []
     if b.lineage and c.lineage:
         out += [f.removesuffix("_version") for f in b.lineage.differs(c.lineage) if f != "generator"]
@@ -275,8 +287,21 @@ def differences(baseline: Run, candidate: Run) -> list[str]:
     return out
 
 
-def compare(baseline: Run, candidate: Run, records: list[Record], matrix: MatrixFile) -> Regression:
-    """The candidate against the baseline on the records both answered."""
+def compare(
+    baseline: Run,
+    candidate: Run,
+    records: list[Record],
+    matrix: MatrixFile,
+    allow_confounded: bool = False,
+) -> Regression:
+    """The candidate against the baseline on the records both answered. Refused when the two runs differ
+    in more than one variable (a controlled comparison changes one thing), unless `allow_confounded`."""
+    differs = differences(baseline, candidate)
+    if len(differs) > 1 and not allow_confounded:
+        raise ValueError(
+            f"{candidate.name} differs from {baseline.name} in {len(differs)} variables ({', '.join(differs)}); "
+            "a controlled comparison changes one; --allow-confounded compares anyway and the report says so"
+        )
     earlier, later = baseline.by_id(), candidate.by_id()
     missing = [r.id for r in records if r.id not in earlier or r.id not in later]
     shared = [r for r in records if r.id not in set(missing)]
@@ -305,8 +330,14 @@ def compare(baseline: Run, candidate: Run, records: list[Record], matrix: Matrix
         matrix_before=check_matrix(matrix.matrix, before),
         matrix_after=check_matrix(matrix.matrix, after),
         changed=changed,
-        differs=differences(baseline, candidate),
+        differs=differs,
         missing=missing,
+        variables=[
+            (name, baseline.manifest.experiment.value(name), candidate.manifest.experiment.value(name))
+            for name in VARIABLES
+        ]
+        if baseline.manifest.experiment and candidate.manifest.experiment
+        else [],
     )
 
 

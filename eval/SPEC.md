@@ -409,3 +409,37 @@ uv run infra-docs-rag dataset diagnose --run <run> --cases a,b,c --example a    
 uv run infra-docs-rag traces --id <trace_id>                                                                           # one trace from the log, rendered
 ```
 
+## 11. Everything versioned together
+
+A score depends on more than the pipeline that produced the answers. The **experiment manifest** on
+every run's manifest (`experiment`, `evaluation/experiment.py`) records every variable that moves it,
+each as a version or a content hash: the pipeline (its name, the retrieval configuration, the prompt
+wording, the index, the embedding model, the chunking, the ingest), the model and how it was called
+(generator, backend, effort), the dataset (section 6, `<records>+<hash>`) and the benchmark (the three
+question files), the grader (`<rubric name>+<hash of the grader's prompt>`) and the judge, the gates
+(`matrix.yaml`, `gates.yaml`), and the safety policy (`safety.yaml`, section 12; `none` until it
+exists). The variables are grouped as *retrieval, prompt, corpus, model, dataset, grader, gates,
+safety*; `scripts/backfill_experiments.py` writes the manifest onto a run saved before this stage.
+
+**One variable at a time.** `dataset compare` reads the two experiment manifests and names the
+variables that differ, in a table with the exact identifiers; it refuses a comparison that changes
+more than one (`--allow-confounded` compares anyway and the report says **Confounded** in place of the
+attribution). A controlled change is then a pipeline version that moves one variable against the
+pinned baseline, and the report's deltas by slice are that variable's.
+
+**The freeze.** [`frozen.yaml`](frozen.yaml) pins the assets a release decision is read under: the
+dataset and the benchmark, the grader and the judge, the gates and the matrix, the safety policy, by
+content hash. `dataset freeze` writes it; `dataset freeze --check` compares the files to it and exits
+1 when one moved; `pipeline release` runs the same check and refuses to decide under moved assets, and
+refuses a candidate run whose experiment manifest was read under other assets than the freeze. A
+release records the candidate's experiment manifest and the freeze beside its lineage, so the decision
+can be reread later under exactly what it was taken with. Changing an asset (a record edited, the
+rubric reworded, a gate loosened) is a deliberate `dataset freeze`, with its note, not a side effect.
+The release checklist is [`../docs/release.md`](../docs/release.md).
+
+```sh
+uv run infra-docs-rag dataset freeze --note '…'       # pin the assets; `--check` to verify them, exit 1 when one moved
+uv run infra-docs-rag dataset compare --candidate <run> [--allow-confounded]   # the variables table, the one-variable rule
+uv run infra-docs-rag pipeline release --candidate <run>                       # refused under a stale freeze
+```
+

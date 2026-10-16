@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ..embed.embedders import load_embedder
 from ..embed.index import Index
+from ..evaluation.experiment import Frozen
 from ..evaluation.gates import load_gates
 from ..evaluation.runs import RUNS_DIR, Run
 from ..evaluation.versions import DEFAULT_VERSION, Version, load_versions, pick
@@ -203,12 +204,15 @@ def manage_index(args: argparse.Namespace, model: str, index_dir: Path) -> None:
         describe_indexes(index_dir)
 
 
-def release(args: argparse.Namespace, index_dir: Path, releases_path: Path = RELEASES) -> int:
+def release(
+    args: argparse.Namespace, index_dir: Path, releases_path: Path = RELEASES, frozen: Frozen | None = None
+) -> int:
+    """`frozen` is the freeze the caller checked against the current files; None skips the check."""
     releases = Releases.load(releases_path)
     candidate = Run.load(RUNS_DIR / args.candidate)
     baseline = Run.load(RUNS_DIR / releases.live.run) if releases.live else None
     try:
-        made, comparison = promote(candidate, releases, load_gates(), baseline, args.note)
+        made, comparison = promote(candidate, releases, load_gates(), baseline, args.note, frozen=frozen)
     except ReleaseBlocked as blocked:
         for r in blocked.comparison.results:
             if not r.passed:
