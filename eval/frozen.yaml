@@ -10,8 +10,8 @@ grader_version: answer-quality-v1+11392d5a1f8c
 judge: jev-1.13.0
 matrix_version: matrix+89737319b52c
 gates_version: gates+4a89da166079
-safety_version: none
-frozen_at: '2026-10-16T01:15:11+00:00'
-git_sha: f555a13
-note: 'stage 20: the budgets added to gates.yaml and matrix.yaml (cost per request,
-  p95, cache hit share); dataset, benchmark, grader and judge unchanged'
+safety_version: safety+44e14914bd02
+frozen_at: '2026-10-16T01:22:58+00:00'
+git_sha: ad54ffe
+note: 'stage 21: the safety policy eval/safety.yaml added; dataset, benchmark, grader,
+  judge and gates unchanged'

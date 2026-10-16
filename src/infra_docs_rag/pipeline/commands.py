@@ -205,14 +205,21 @@ def manage_index(args: argparse.Namespace, model: str, index_dir: Path) -> None:
 
 
 def release(
-    args: argparse.Namespace, index_dir: Path, releases_path: Path = RELEASES, frozen: Frozen | None = None
+    args: argparse.Namespace,
+    index_dir: Path,
+    releases_path: Path = RELEASES,
+    frozen: Frozen | None = None,
+    safety: tuple[str, bool] | None = None,
 ) -> int:
-    """`frozen` is the freeze the caller checked against the current files; None skips the check."""
+    """`frozen` is the freeze the caller checked against the current files and `safety` the candidate
+    version's graded safety run (its name, whether it passes); None skips either check."""
     releases = Releases.load(releases_path)
     candidate = Run.load(RUNS_DIR / args.candidate)
     baseline = Run.load(RUNS_DIR / releases.live.run) if releases.live else None
     try:
-        made, comparison = promote(candidate, releases, load_gates(), baseline, args.note, frozen=frozen)
+        made, comparison = promote(
+            candidate, releases, load_gates(), baseline, args.note, frozen=frozen, safety=safety
+        )
     except ReleaseBlocked as blocked:
         for r in blocked.comparison.results:
             if not r.passed:

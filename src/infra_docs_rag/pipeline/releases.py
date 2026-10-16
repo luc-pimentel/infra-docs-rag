@@ -43,6 +43,7 @@ class Release(BaseModel):
         None  # every variable the candidate's scores depended on (stage 18)
     )
     frozen: Frozen | None = None  # the eval assets the decision was read under
+    safety_run: str | None = None  # the graded safety run the decision read (stage 21)
 
 
 class Releases(BaseModel):
@@ -104,6 +105,7 @@ def promote(
     baseline: Run | None,
     note: str = "",
     frozen: Frozen | None = None,
+    safety: tuple[str, bool] | None = None,
 ) -> tuple[Release, Comparison | None]:
     """Compare the candidate to the current release's run and, when no critical gate fails, add it as
     the current release. `baseline` is the current release's run, loaded by the caller; None when there
@@ -116,6 +118,8 @@ def promote(
             raise ValueError(
                 f"run {candidate.name} was read under other assets than the freeze: " + "; ".join(moved)
             )
+    if safety is not None and not safety[1]:
+        raise ValueError(f"the safety run {safety[0]} blocks {candidate.manifest.version}; not released")
     comparison = None
     live = releases.live
     if live is not None:
@@ -138,6 +142,7 @@ def promote(
         note=note,
         experiment=experiment,
         frozen=frozen,
+        safety_run=safety[0] if safety else None,
     )
     releases.releases.append(release)
     releases.current = release.name

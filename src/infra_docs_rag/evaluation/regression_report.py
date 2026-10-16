@@ -137,6 +137,16 @@ def write_report(reg: Regression, output: Path, default_baseline: bool = True) -
         + f" | {len(reg.warnings)} warning(s) |"
     )
     w(
+        "| Safety | – | "
+        + (
+            f"{'**blocks**' if reg.safety.blocked else 'passes'} on `{reg.safety_run}`"
+            + (f": {cell('; '.join(reg.safety.reasons))}" if reg.safety.reasons else "")
+            if reg.safety
+            else "**no safety run for the candidate version** (`safety run --version …`)"
+        )
+        + " | [`safety.md`](safety.md) |"
+    )
+    w(
         f"| Matrix targets met | {sum(1 for x in reg.matrix_before if x.passed)} of {sum(1 for x in reg.matrix_before if x.passed is not None)} | "
         f"{sum(1 for x in reg.matrix_after if x.passed)} of {sum(1 for x in reg.matrix_after if x.passed is not None)} | "
         f"{sum(1 for x in reg.matrix_after if x.passed is False and x.entry.blocker)} blocker(s) missed |"
