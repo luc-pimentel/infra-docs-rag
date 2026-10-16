@@ -17,6 +17,7 @@ from ..generate.evaluate import Case, Grounding
 from ..generate.prompt import SYSTEM, SYSTEM_TYPED
 from ..pipeline.manifest import PipelineManifest
 from ..retrieve.retriever import Retrieval, gate, relevance
+from .experiment import ExperimentManifest
 
 RUNS_DIR = Path("eval/runs")
 Expect = Literal["answer", "abstain", "partial"]
@@ -174,6 +175,7 @@ class RunManifest(BaseModel):
     questions: int
     lineage: PipelineManifest | None = None  # which version of every stage produced the answers
     dataset: str | None = None  # `<records>+<hash>`: the dataset version a dataset run answered (dataset.py)
+    experiment: ExperimentManifest | None = None  # every variable the scores depend on (stage 18)
 
 
 class Run(BaseModel):

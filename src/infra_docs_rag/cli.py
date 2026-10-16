@@ -1,6 +1,6 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | judge grade | judge calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+calibrate | judge grade | judge calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | dataset freeze | traces | pipeline run | pipeline status | pipeline index | pipeline release |
 pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
@@ -41,6 +41,7 @@ from .evaluation.dataset_judge import load_reader, reading_state_of
 from .evaluation.dataset_report import write_report as write_dataset_report
 from .evaluation.dataset_run import run_dataset, to_run
 from .evaluation.diagnose import diagnose_run, load_traces, save_traces
+from .evaluation.experiment import FROZEN, ExperimentManifest, Frozen
 from .evaluation.gates import compare as compare_runs
 from .evaluation.gates import load_gates
 from .evaluation.judge_calibrate import CALIBRATION, JUDGE_REPORT, calibrate_judge, items_of, load_calibration
@@ -52,7 +53,7 @@ from .evaluation.regression import BASELINE, Baseline
 from .evaluation.regression import compare as compare_dataset_runs
 from .evaluation.regression_report import write_report as write_regression_report
 from .evaluation.report import write_report as write_evaluation_report
-from .evaluation.rubric import GRADES, GradeSet, RubricGrader, load_rubric, new_grade_set
+from .evaluation.rubric import GRADES, GradeSet, RubricGrader, grader_version, load_rubric, new_grade_set
 from .evaluation.runs import RUNS_DIR, JudgementRecord, ReadingRecord, Run, from_grounding
 from .evaluation.slices import (
     check_matrix,
@@ -315,7 +316,9 @@ def run_benchmark(
     lineage = lineage.model_copy(update={"generator": grounding.generator})
     if isinstance(gen, CachedGenerator):
         print(f"generation cache: {gen.hits} hits, {gen.misses} misses")
-    return grounding, from_grounding(grounding, name, version.name, version.description, lineage)
+    saved = from_grounding(grounding, name, version.name, version.description, lineage)
+    saved.manifest.experiment = ExperimentManifest.of(saved.manifest, None, grader_version(load_rubric()))
+    return grounding, saved
 
 
 def evaluation_for(args: argparse.Namespace, paths: Paths) -> Evaluation:
@@ -690,10 +693,23 @@ def main(argv: list[str] | None = None) -> None:
         "--baseline", help=f"a saved dataset run to compare against (default: the run {BASELINE} pins)"
     )
     compare_cmd.add_argument(
+        "--allow-confounded",
+        action="store_true",
+        help="compare even when the two runs differ in more than one variable (the report says which)",
+    )
+    compare_cmd.add_argument(
         "--no-block",
         action="store_true",
         help="write the report and print the decision but exit 0 whatever it is: for regenerating the committed record of an experiment",
     )
+    freeze_cmd = dataset_sub.add_parser(
+        "freeze",
+        help=f"pin the eval assets release decisions are read under (dataset, benchmark, grader, judge, gates, safety policy) in {FROZEN}; --check exits 1 when one has moved",
+    )
+    freeze_cmd.add_argument(
+        "--check", action="store_true", help="compare the files to the freeze instead of writing it"
+    )
+    freeze_cmd.add_argument("--note", default="", help="why this freeze, for the record")
     diagnose_cmd = dataset_sub.add_parser(
         "diagnose",
         help=f"read the trace behind every failed record of a dataset run and name where it broke → {TRACES_REPORT}",
@@ -969,7 +985,24 @@ def main(argv: list[str] | None = None) -> None:
             elif args.pipeline_command == "index":
                 pipeline_commands.manage_index(args, DEFAULT_MODEL, INDEX_DIR)
             elif args.pipeline_command == "release":
-                if pipeline_commands.release(args, INDEX_DIR):
+                frozen = Frozen.load(FROZEN)
+                pin = Baseline.load(BASELINE)
+                ds_records = load_dataset(DATASET_DIR).records
+                moved = frozen.problems(
+                    Frozen.now(
+                        dataset_version(ds_records),
+                        grader_version(load_rubric()),
+                        Run.load(RUNS_DIR / pin.run).manifest.judge,
+                    )
+                )
+                if moved:
+                    for p in moved:
+                        print(f"moved: {p}")
+                    parser.exit(
+                        1,
+                        "refused: the eval assets moved since the freeze; `dataset freeze` deliberately, then release\n",
+                    )
+                if pipeline_commands.release(args, INDEX_DIR, frozen=frozen):
                     parser.exit(1)
             elif args.pipeline_command == "rollback":
                 pipeline_commands.roll_back(INDEX_DIR)
@@ -1087,10 +1120,40 @@ def main(argv: list[str] | None = None) -> None:
                 )
                 lineage = lineage.model_copy(update={"generator": dg.grounding.generator})
                 saved = to_run(dg, name, version.name, version.description, lineage, ds_version)
+                saved.manifest.experiment = ExperimentManifest.of(
+                    saved.manifest, ds_version, grader_version(load_rubric())
+                )
                 save_traces(traced, RUNS_DIR / saved.name)
                 print(
                     f"saved the run and its {len(traced)} traces to {saved.save(RUNS_DIR / saved.name)}/; "
                     f"next: `dataset metrics --run {saved.name}`"
+                )
+                return
+            if args.dataset_command == "freeze":
+                pin = Baseline.load(BASELINE)
+                judge_model = Run.load(RUNS_DIR / pin.run).manifest.judge
+                current = Frozen.now(
+                    dataset_version(ds.records), grader_version(load_rubric()), judge_model, args.note
+                )
+                if args.check:
+                    frozen = Frozen.load(FROZEN)
+                    problems = frozen.problems(current)
+                    for p in problems:
+                        print(f"moved: {p}")
+                    print(
+                        f"frozen {frozen.frozen_at[:10]} at {frozen.git_sha}: dataset {frozen.dataset_version}, {frozen.benchmark_version}, "
+                        f"grader {frozen.grader_version}, judge {frozen.judge}, {frozen.matrix_version}, {frozen.gates_version}, safety {frozen.safety_version}"
+                        + (f"; {frozen.note}" if frozen.note else "")
+                    )
+                    if problems:
+                        print(
+                            "the assets moved since the freeze; `dataset freeze` again, deliberately, before deciding a release"
+                        )
+                        parser.exit(1)
+                    print("the freeze holds")
+                    return
+                print(
+                    f"froze dataset {current.dataset_version}, {current.benchmark_version}, grader {current.grader_version}, judge {current.judge}, {current.matrix_version}, {current.gates_version}, safety {current.safety_version} in {current.save(FROZEN)}"
                 )
                 return
             if args.dataset_command == "diagnose":
@@ -1156,7 +1219,9 @@ def main(argv: list[str] | None = None) -> None:
                 cand_run = Run.load(RUNS_DIR / args.candidate)
                 if cand_run.name == base_run.name:
                     raise ValueError(f"{args.candidate} is the baseline; name another run with --candidate")
-                reg = compare_dataset_runs(base_run, cand_run, ds.records, load_matrix())
+                reg = compare_dataset_runs(
+                    base_run, cand_run, ds.records, load_matrix(), allow_confounded=args.allow_confounded
+                )
                 if reg.missing:
                     print(
                         f"warning: {len(reg.missing)} records are not in both runs and are left out ({', '.join(reg.missing[:5])}{'…' if len(reg.missing) > 5 else ''})"

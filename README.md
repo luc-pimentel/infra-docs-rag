@@ -11,8 +11,8 @@ uv run infra-docs-rag answer "How do I undo a bad release?"
 **Status:** the service is complete through the capstone ([`docs/capstone.md`](docs/capstone.md) is the
 design in one page, [`docs/demo.md`](docs/demo.md) the fifteen-minute demo); the evaluation track that
 follows it is four stages in: the dataset, the metrics by failure mode, the judge calibrated against
-hand labels, the evals as regression tests with a pinned baseline, and the traces that say where a
-failed eval broke (stages 13 to 17).
+hand labels, the evals as regression tests with a pinned baseline, the traces that say where a failed
+eval broke, and every variable a score depends on versioned together (stages 13 to 18).
 
 ## Architecture
 
@@ -161,7 +161,15 @@ Each stage ships into this repo, so the service grows with the checklist.
   passage third, the reranker 18th of 20 and 42nd of 50), two misses as the token budget cutting the
   passage ranked fourth, and the adversarial losses as the prompt's abstention rule not holding
   ([report](reports/traces.md))
-- [ ] 18 · Prompts, retrieval config and eval assets versioned together
+- [x] 18 · Prompts, retrieval config and eval assets versioned together: an experiment manifest on
+  every run with every variable that moves a score as a version or a content hash (the pipeline, the
+  model and its effort, the dataset and the benchmark, the grader and the judge, the gates, the safety
+  policy), grouped as eight variables; the comparison naming the variables that differ with their
+  exact identifiers and refusing a change that moves more than one; a freeze that pins the dataset,
+  benchmark, grader, judge, gates and policy a release decision is read under, checked by the PR check
+  and by `pipeline release`, which also refuses a candidate read under other assets and records the
+  experiment and the freeze beside the release; the release checklist ([freeze](eval/frozen.yaml),
+  [checklist](docs/release.md))
 - [ ] 19 · Online evaluators and drift detection
 - [ ] 20 · Cost and latency as quality metrics
 - [ ] 21 · Safety and guardrail evals

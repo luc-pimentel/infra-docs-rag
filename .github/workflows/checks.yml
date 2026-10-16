@@ -34,6 +34,7 @@ jobs:
         # candidate is an experiment whose decision the report records, so it is not asserted here.
         run: |
           uv run infra-docs-rag dataset baseline check
+          uv run infra-docs-rag dataset freeze --check
           uv run infra-docs-rag dataset compare --candidate dataset-v4-rerank-50-claude-code --no-block
           uv run infra-docs-rag dataset diagnose --run dataset-v3-budget-claude-code --run dataset-v4-rerank-50-claude-code
       - name: judge calibration on the saved grades

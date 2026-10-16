@@ -15,6 +15,7 @@ import yaml
 from pydantic import BaseModel, ValidationError
 
 from ..embed.embedders import MODELS
+from ..evaluation.experiment import ExperimentManifest, Frozen
 from ..evaluation.gates import Comparison, Gate, compare
 from ..evaluation.runs import Run
 from .manifest import PipelineManifest
@@ -38,6 +39,10 @@ class Release(BaseModel):
     against: str | None = None  # the release it was compared to, when there was one
     gates: str = ""  # the comparison's verdict
     note: str = ""
+    experiment: ExperimentManifest | None = (
+        None  # every variable the candidate's scores depended on (stage 18)
+    )
+    frozen: Frozen | None = None  # the eval assets the decision was read under
 
 
 class Releases(BaseModel):
@@ -98,11 +103,19 @@ def promote(
     gates: list[Gate],
     baseline: Run | None,
     note: str = "",
+    frozen: Frozen | None = None,
 ) -> tuple[Release, Comparison | None]:
     """Compare the candidate to the current release's run and, when no critical gate fails, add it as
     the current release. `baseline` is the current release's run, loaded by the caller; None when there
     is no release yet, in which case the candidate is accepted as the first."""
     lineage = lineage_of(candidate)
+    experiment = candidate.manifest.experiment
+    if frozen is not None and experiment is not None:
+        moved = frozen.matches(experiment)
+        if moved:
+            raise ValueError(
+                f"run {candidate.name} was read under other assets than the freeze: " + "; ".join(moved)
+            )
     comparison = None
     live = releases.live
     if live is not None:
@@ -123,6 +136,8 @@ def promote(
         against=live.name if live else None,
         gates=comparison.verdict if comparison else "first release, no baseline to compare against",
         note=note,
+        experiment=experiment,
+        frozen=frozen,
     )
     releases.releases.append(release)
     releases.current = release.name

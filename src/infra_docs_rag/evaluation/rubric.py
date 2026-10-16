@@ -215,6 +215,11 @@ def prompt_sha256(rubric: Rubric) -> str:
     return hashlib.sha256(system_prompt(rubric).encode()).hexdigest()[:12]
 
 
+def grader_version(rubric: Rubric) -> str:
+    """`answer-quality-v1+11392d5a1f8c`: the rubric's name, then the hash of the grader's prompt."""
+    return f"{rubric.name}+{prompt_sha256(rubric)}"
+
+
 class RubricGrader:
     """Claude through `claude -p`, the rubric as the system prompt, the scores as a JSON object the CLI
     validates against a schema. Runs in an empty directory with no tools and one turn, on the

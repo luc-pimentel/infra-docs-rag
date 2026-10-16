@@ -116,11 +116,13 @@ def to_run(
     description: str = "",
     lineage: PipelineManifest | None = None,
     dataset: str | None = None,
+    experiment=None,
 ) -> Run:
     """The dataset run to save: a benchmark-format run with each case's reading attached and the
     version of the dataset it answered (`dataset_version`) on its manifest."""
     run = from_grounding(dg.grounding, name, version, description, lineage)
     run.manifest.dataset = dataset
+    run.manifest.experiment = experiment
     for c in run.cases:
         rd = dg.readings.get(c.id)
         if rd is not None:
