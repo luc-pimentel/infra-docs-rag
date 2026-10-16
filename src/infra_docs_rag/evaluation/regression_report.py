@@ -272,6 +272,12 @@ def write_report(reg: Regression, output: Path, default_baseline: bool = True) -
                 w("")
                 w("Passages: " + passages(x.after) + ".")
                 w("")
+                if x.before.trace_id or x.after.trace_id:
+                    w(
+                        f"Traces: baseline `{x.before.trace_id or '–'}`, candidate `{x.after.trace_id or '–'}` "
+                        f"(`traces.jsonl` beside each run; `dataset diagnose --run {reg.candidate.name}` reads them)."
+                    )
+                    w("")
         if reg.wins:
             w("The wins, in a line each:")
             w("")

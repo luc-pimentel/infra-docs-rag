@@ -189,6 +189,12 @@ class Context:
     degraded: str | None = (
         None  # what fell back and why, when a stage failed and the next best thing was used
     )
+    ranked: list[Hit] = field(
+        default_factory=list
+    )  # the top k the pack step read, before the floor and the budget
+    reranked: list[Hit] = field(
+        default_factory=list
+    )  # every candidate in the reranker's order, when there was one; what `ranked` is the head of
 
     @property
     def text(self) -> str:
@@ -228,13 +234,14 @@ class Retriever:
         self.embedder = embedder
         self.lexical = Lexical.build(index.chunks)
         self.reranker = reranker
+        self.reranked_hits: list[Hit] = []
         self.last_rerank: Reranked | None = None  # what the last reranked ranking cost; for the benchmarks
         self.timings: dict[str, float] = {}  # of the retrieval in progress; attached to its Context
         self.first_stage_hits: list[Hit] = []
         self.degraded: str | None = None
 
     def retrieve(self, query: str, retrieval: Retrieval = DEFAULT_RETRIEVAL) -> Context:
-        self.timings, self.first_stage_hits, self.degraded = {}, [], None
+        self.timings, self.first_stage_hits, self.reranked_hits, self.degraded = {}, [], [], None
         started = time.perf_counter()
         vector = self.embedder.embed_queries([query])[0]
         self.timings["embed"] = (time.perf_counter() - started) * 1000
@@ -266,6 +273,7 @@ class Retriever:
             self.timings["rerank"] = (time.perf_counter() - started) * 1000
             return candidates[:k]
         self.timings["rerank"] = (time.perf_counter() - started) * 1000
+        self.reranked_hits = list(self.last_rerank.ranked)
         return list(self.last_rerank.hits)
 
     def first_stage(
@@ -333,4 +341,6 @@ class Retriever:
             timings=dict(self.timings),
             first_stage=list(self.first_stage_hits),
             degraded=self.degraded,
+            ranked=list(hits),
+            reranked=list(self.reranked_hits),
         )

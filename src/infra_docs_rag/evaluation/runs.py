@@ -120,6 +120,7 @@ class CaseRecord(BaseModel):
     generated: GeneratedRecord | None = None
     judgement: JudgementRecord | None = None
     reading: ReadingRecord | None = None  # the dataset reader's probabilities, on a dataset run
+    trace_id: str | None = None  # the trace behind the answer, in `traces.jsonl` beside the run (stage 17)
 
     @property
     def held(self) -> bool:
@@ -288,6 +289,7 @@ def record(c: Case) -> CaseRecord:
         )
         if c.judgement
         else None,
+        trace_id=c.trace_id,
     )
 
 

@@ -1,8 +1,11 @@
 """A trace is one question through the pipeline, as a record: what was asked, under which pipeline
 version (the lineage), what the first stage ranked and with which scores, what the reranker made of
-it, what was packed, what the model wrote and cited, what the judge read, and how long each stage took.
-One JSON line per question in `data/traces/traces.jsonl`; `answer --trace` prints the one it made, and
-a benchmark run writes one per case."""
+it, what was packed and what was dropped on the way, what the model wrote and cited, what the judge and
+the reader read, and how long each stage took. One JSON line per question in `data/traces/traces.jsonl`;
+`answer --trace` prints the one it made, and a run writes one per case, tagged with the example it
+answered, the run and the dataset version, and keeps them in `traces.jsonl` beside the run (stage 17).
+`spans` reads the same trace as spans: retrieve, prompt, generate, verify, judge, read, each with its
+time and the attributes a diagnosis needs."""
 
 import json
 import uuid
@@ -37,6 +40,33 @@ class TracedCitation(BaseModel):
     chunk_id: str
     span: str
     cited_text: str
+
+
+class TracedDrop(BaseModel):
+    """A ranked passage the pack step left out, and why."""
+
+    rank: int
+    chunk_id: str
+    citation: str
+    reason: str  # threshold | relevance | budget
+
+
+class TracedReading(BaseModel):
+    relevant: float
+    reference_agrees: float
+    deprecation_named: float
+    readings_named: float
+    model: str
+    ms: float
+    cost_usd: float
+
+
+class Span(BaseModel):
+    """One stage of the request as a span: a name, its time, and what a diagnosis reads off it."""
+
+    name: str
+    ms: float
+    attributes: dict[str, str | int | float | bool | None] = {}
 
 
 class TracedJudgement(BaseModel):
@@ -77,10 +107,136 @@ class Trace(BaseModel):
     cost_usd: float = 0.0
     judgement: TracedJudgement | None = None
     error: str | None = None
+    # Stage 17: the eval identifiers, the rest of the retrieval's decisions, and the reader.
+    example_id: str | None = None  # the record or benchmark question the answer is for
+    run: str | None = None  # the saved run under eval/runs/ this trace belongs to
+    dataset_version: str | None = None  # `<records>+<hash>`, on a dataset run
+    reranked: list[TracedHit] = []  # every candidate in the reranker's order, when there was one
+    ranked: list[TracedHit] = []  # the top k the pack step read, before the floor and the budget
+    dropped: list[TracedDrop] = []  # ranked passages the pack step left out, with the reason
+    tokens: int | None = None  # of the passages packed, in the embedding model's tokens
+    budget: int | None = None  # the retrieval's token budget
+    over_budget: int = 0
+    reading: TracedReading | None = None
 
     @property
     def answered(self) -> bool:
         return self.outcome == "answered"
+
+    @property
+    def retrieve_ms(self) -> float:
+        return sum(v for k, v in self.stages.items() if k in RETRIEVAL_STAGES)
+
+    @property
+    def spans(self) -> list[Span]:
+        """The trace as spans, in request order."""
+        out = [
+            Span(
+                name="retrieve",
+                ms=round(self.retrieve_ms, 1),
+                attributes={
+                    "candidates": self.candidates,
+                    "first_stage": len(self.first_stage),
+                    "reranked": len(self.reranked) or None,
+                    "ranked": len(self.ranked) or None,
+                    "packed": len(self.context),
+                    "dropped_threshold": sum(d.reason in ("threshold", "relevance") for d in self.dropped),
+                    "dropped_budget": sum(d.reason == "budget" for d in self.dropped),
+                    "below": self.below,
+                    "over_budget": self.over_budget,
+                    "top_score": self.top_score,
+                    "degraded": self.degraded,
+                    "retrieval": self.retrieval,
+                },
+            ),
+            Span(
+                name="prompt",
+                ms=0.0,
+                attributes={
+                    "passages": len(self.context),
+                    "tokens": self.tokens,
+                    "budget": self.budget,
+                    "prompt_version": self.prompt_version or None,
+                },
+            ),
+        ]
+        if "generate" in self.stages:
+            out.append(
+                Span(
+                    name="generate",
+                    ms=self.stages["generate"],
+                    attributes={
+                        "model": self.generator or None,
+                        "input_tokens": self.input_tokens,
+                        "output_tokens": self.output_tokens,
+                        "cost_usd": self.cost_usd,
+                        "outcome": self.outcome,
+                        "error": self.error,
+                    },
+                )
+            )
+        if self.answered:
+            out.append(
+                Span(
+                    name="verify",
+                    ms=0.0,
+                    attributes={
+                        "citations": len(self.citations),
+                        "cited_chunks": len({c.chunk_id for c in self.citations}),
+                        "cited_share": self.cited_share,
+                        "claim_share": self.claim_share,
+                        "uncited": len(self.uncited),
+                    },
+                )
+            )
+        if self.judgement is not None:
+            j = self.judgement
+            out.append(
+                Span(
+                    name="judge",
+                    ms=j.ms,
+                    attributes={
+                        "model": j.model,
+                        "grounded": j.grounded,
+                        "fabricated": j.fabricated,
+                        "gap_named": j.gap_named,
+                    },
+                )
+            )
+        if self.reading is not None:
+            r = self.reading
+            out.append(
+                Span(
+                    name="read",
+                    ms=r.ms,
+                    attributes={
+                        "model": r.model,
+                        "relevant": r.relevant,
+                        "reference_agrees": r.reference_agrees,
+                        "deprecation_named": r.deprecation_named,
+                        "readings_named": r.readings_named,
+                    },
+                )
+            )
+        return out
+
+    @property
+    def tags(self) -> dict[str, str | None]:
+        """The identifiers that link the trace to its eval example and experiment."""
+        L = self.lineage
+        return {
+            "example_id": self.example_id,
+            "run": self.run,
+            "dataset_version": self.dataset_version,
+            "version": self.version,
+            "prompt_version": self.prompt_version or (L.prompt_version if L else None),
+            "model_version": self.generator or (L.generator if L else None) or None,
+            "retriever_version": L.retrieval_version if L else None,
+            "index_version": L.index_version if L else None,
+        }
+
+
+RETRIEVAL_STAGES = ("embed", "dense", "lexical", "fuse", "rerank", "pack")
 
 
 def traced(hit) -> TracedHit:
@@ -97,6 +253,32 @@ def traced(hit) -> TracedHit:
     )
 
 
+def drops(ctx) -> list[TracedDrop]:
+    """The ranked passages the pack step left out: under the cosine floor, under the reranker's floor,
+    or past the budget."""
+    packed = {s.chunk.chunk_id for s in ctx.sources}
+    out: list[TracedDrop] = []
+    r = ctx.retrieval
+    for h in ctx.ranked:
+        if h.chunk.chunk_id in packed:
+            continue
+        cosine = gate(h)
+        if r.min_score is not None and cosine is not None and cosine < r.min_score:
+            reason = "threshold"
+        elif (
+            r.rerank is not None
+            and r.rerank.min_relevance is not None
+            and (relevance(h) or 0.0) < r.rerank.min_relevance
+        ):
+            reason = "relevance"
+        else:
+            reason = "budget"
+        out.append(
+            TracedDrop(rank=h.rank, chunk_id=h.chunk.chunk_id, citation=h.chunk.citation(), reason=reason)
+        )
+    return out
+
+
 def trace_answer(
     a: Answer,
     version: str = "default",
@@ -104,6 +286,10 @@ def trace_answer(
     prompt_version: str = "",
     judgement: Judgement | None = None,
     prices: dict[str, float] | None = None,
+    example_id: str | None = None,
+    run: str | None = None,
+    dataset_version: str | None = None,
+    reading=None,
 ) -> Trace:
     ctx, g = a.context, a.generated
     stages = dict(ctx.timings)
@@ -111,6 +297,8 @@ def trace_answer(
         stages["generate"] = g.ms
     if judgement is not None:
         stages["judge"] = judgement.ms
+    if reading is not None:
+        stages["read"] = reading.ms
     return Trace(
         trace_id=uuid.uuid4().hex[:12],
         at=datetime.now(UTC).isoformat(timespec="seconds"),
@@ -152,6 +340,26 @@ def trace_answer(
         if judgement
         else None,
         error=a.error,
+        example_id=example_id,
+        run=run,
+        dataset_version=dataset_version,
+        reranked=[traced(h) for h in ctx.reranked],
+        ranked=[traced(h) for h in ctx.ranked],
+        dropped=drops(ctx),
+        tokens=ctx.tokens if ctx.sources else 0,
+        budget=ctx.retrieval.budget,
+        over_budget=ctx.over_budget,
+        reading=TracedReading(
+            relevant=reading.relevant,
+            reference_agrees=reading.reference_agrees,
+            deprecation_named=reading.deprecation_named,
+            readings_named=reading.readings_named,
+            model=reading.model,
+            ms=reading.ms,
+            cost_usd=reading.cost_usd,
+        )
+        if reading is not None
+        else None,
     )
 
 
@@ -184,6 +392,11 @@ def render(t: Trace) -> str:
         f"trace {t.trace_id} · {t.at} · version {t.version} · {t.retrieval}",
         f"question: {t.question}",
     ]
+    if t.example_id or t.run:
+        lines.append(
+            f"example: {t.example_id or '–'} · run {t.run or '–'}"
+            + (f" · dataset {t.dataset_version}" if t.dataset_version else "")
+        )
     if t.lineage:
         lines.append(
             f"lineage: index {t.lineage.index_version} · prompt {t.lineage.prompt_version} · "
@@ -191,7 +404,7 @@ def render(t: Trace) -> str:
         )
     elif t.prompt_version:
         lines.append(f"prompt: {t.prompt_version}")
-    order = ["embed", "dense", "lexical", "fuse", "rerank", "pack", "generate", "judge"]
+    order = ["embed", "dense", "lexical", "fuse", "rerank", "pack", "generate", "judge", "read"]
     shown = [f"{k} {t.stages[k]:,.0f} ms" for k in order if k in t.stages]
     lines.append(f"stages: {' · '.join(shown)} · total {t.total_ms:,.0f} ms")
     if t.degraded:
@@ -215,6 +428,12 @@ def render(t: Trace) -> str:
         if h.cosine is not None:
             parts.append(f"cosine {h.cosine:.2f}")
         lines.append(f"  [{h.rank}] {' · '.join(parts)}  {h.citation}")
+    if t.dropped:
+        lines.append("dropped by the pack step:")
+        for d in t.dropped:
+            lines.append(f"  {d.rank:2}. {d.reason:9} {d.citation}")
+    if t.tokens is not None and t.context:
+        lines.append(f"packed: {t.tokens:,} tokens" + (f" of a {t.budget:,} budget" if t.budget else ""))
     lines.append(f"outcome: {t.outcome}" + (f" ({t.reason})" if t.reason else ""))
     if t.answer:
         lines.append("answer:")
@@ -230,6 +449,12 @@ def render(t: Trace) -> str:
         j = t.judgement
         lines.append(
             f"judge: {j.model} · grounded {j.grounded:.2f} · fabricated {j.fabricated:.2f} · gap named {j.gap_named:.2f}"
+        )
+    if t.reading:
+        r = t.reading
+        lines.append(
+            f"reader: {r.model} · relevant {r.relevant:.2f} · agrees {r.reference_agrees:.2f} · "
+            f"deprecation named {r.deprecation_named:.2f} · readings named {r.readings_named:.2f}"
         )
     return "\n".join(lines)
 

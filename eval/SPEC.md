@@ -373,3 +373,39 @@ uv run infra-docs-rag dataset compare --candidate dataset-v4-rerank-50-claude-co
 uv run infra-docs-rag dataset baseline check                                          # the pin against its run and the records
 uv run infra-docs-rag dataset baseline set --run <run> --note '…'                     # a shipped change becomes the next baseline
 ```
+
+## 10. Traces that explain why an eval fails
+
+A regression score (section 9) says that a record stopped holding; its trace says in which span of the
+request it broke. Every answer writes one trace (`observe/trace.py`): the question, the pipeline
+version and its lineage, every stage's time, what the first stage ranked with its scores, the
+reranker's order over every candidate, what the pack step kept and what it dropped and why (under the
+cosine floor, under the reranker's floor, past the token budget), the tokens packed against the
+budget, what the model wrote and cited, what the judge and the reader read. A run tags each trace with
+the eval identifiers (`example_id`, `run`, `dataset_version`, beside the lineage's prompt, retrieval,
+index and model versions) and keeps them in `runs/<run>/traces.jsonl`; every case carries its
+`trace_id`, so a row in a report opens onto its trace. `Trace.spans` reads the same record as spans:
+`retrieve`, `prompt`, `generate`, `verify`, `judge`, `read`, each with its time and the attributes a
+diagnosis needs. `scripts/backfill_traces.py` writes the file for a run made before this stage, from
+the saved answer and a replay of the retrieval, and marks a record whose replay reads other passages
+than the run did.
+
+**The diagnosis** (`dataset diagnose --run <run>` → [`../reports/traces.md`](../reports/traces.md)):
+for every record whose expectation did not hold, the root cause from the trace, in the four stages the
+module names. *Retrieval*, sub-typed by where the named passage was lost: `first-stage` (not among the
+candidates the first stage ranked), `rerank` (handed to the reranker and put past the top k),
+`threshold` (ranked and dropped under the floor), `budget` (ranked and dropped when the tokens ran
+out). *Prompt construction*: `abstention` (an abstention expected, near-miss passages cleared the floor
+and the prompt's rule did not hold against them), `instruction` (an instruction in the question and the
+answer followed it). *Context overload*: the context at its budget, four passages or more, the answer
+left partly uncited. *Generation*: the named passage reached the model and the answer still failed, with
+nothing upstream to blame. The report prints the schema, one trace in full, every failed record of each
+run with its cause and evidence, and three cases walked from the score to the span; the regression
+report links each loss to its trace in both runs.
+
+```sh
+uv run infra-docs-rag dataset diagnose --run dataset-v3-budget-claude-code --run dataset-v4-rerank-50-claude-code   # → reports/traces.md
+uv run infra-docs-rag dataset diagnose --run <run> --cases a,b,c --example a                                           # the cases to walk through, the trace to print
+uv run infra-docs-rag traces --id <trace_id>                                                                           # one trace from the log, rendered
+```
+

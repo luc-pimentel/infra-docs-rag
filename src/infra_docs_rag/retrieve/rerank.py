@@ -10,7 +10,7 @@ relevance after a sigmoid, in [0, 1], so a floor on them means the same for ever
 """
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 import numpy as np
@@ -104,6 +104,7 @@ class Reranked:
     hits: list[RerankedHit]  # the top k, best first
     scored: int  # candidates the reranker read
     ms: float  # the reranker's time, scoring and sorting
+    ranked: list[RerankedHit] = field(default_factory=list)  # every candidate in the reranker's order
 
 
 def rerank(query: str, candidates: list[Hit], reranker: Reranker, k: int) -> Reranked:
@@ -112,8 +113,10 @@ def rerank(query: str, candidates: list[Hit], reranker: Reranker, k: int) -> Rer
     started = time.perf_counter()
     relevance = reranker.score(query, [h.chunk.embedded for h in candidates])
     order = sorted(range(len(candidates)), key=lambda i: (-float(relevance[i]), candidates[i].rank))
-    hits = [
+    ranked = [
         RerankedHit(rank=n + 1, score=float(relevance[i]), chunk=candidates[i].chunk, first=candidates[i])
-        for n, i in enumerate(order[:k])
+        for n, i in enumerate(order)
     ]
-    return Reranked(hits=hits, scored=len(candidates), ms=(time.perf_counter() - started) * 1000)
+    return Reranked(
+        hits=ranked[:k], scored=len(candidates), ms=(time.perf_counter() - started) * 1000, ranked=ranked
+    )
