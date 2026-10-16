@@ -170,7 +170,18 @@ Each stage ships into this repo, so the service grows with the checklist.
   and by `pipeline release`, which also refuses a candidate read under other assets and records the
   experiment and the freeze beside the release; the release checklist ([freeze](eval/frozen.yaml),
   [checklist](docs/release.md))
-- [ ] 19 · Online evaluators and drift detection
+- [x] 19 · Online evaluators and drift detection: a sampling policy over live traffic (what a person
+  marked unhelpful through the new `POST /feedback`, answers under the claim floor, weak matches
+  answered from, no-answers, contexts at the budget, long questions, identifiers, errors, and a stable
+  random share), a window saved with its samples, jev reading every sampled answer against the passages
+  read back from the index, failure clusters, and drift in the no-answer rate, top cosine, claim share,
+  grounded share and query length against the offline baseline and the window before; failed samples
+  promoted into dataset records with a reference drafted from the passages, merged, and the baseline
+  run again under the new dataset version; on the first window (forty hand-written questions through the
+  service, 12 with feedback) 37 of 47 live traces sampled, 22 judged, 9 failed, no rate past its drift
+  threshold but the no-answer rate up 14 points on the baseline's, and the ten harvested records mostly
+  the corpus gaps people marked unhelpful (sync waves, scrape configs, `rate` vs `irate`, bearer tokens)
+  ([policy](eval/online.yaml), [report](reports/online.md), [harvested](eval/dataset/harvested.yaml))
 - [ ] 20 · Cost and latency as quality metrics
 - [ ] 21 · Safety and guardrail evals
 - [ ] 22 · The evaluation system as an operations workflow

@@ -1,0 +1,32 @@
+# The online sampling policy (stage 19): which live traces `infra-docs-rag online sample` picks out of
+# a window of traffic for the judge to read and a person to see. A trace the service or `answer` wrote
+# is live; a run's or the canary's is not. Every rule that fires is recorded on the sample; `random`
+# picks a stable share of the traces no rule fired on, so the window stays representative. `drift` is
+# how far a window's rate may move from the offline baseline's (the pinned dataset run) before the
+# report flags it.
+
+window_days: 7
+low_confidence_top_score: 0.60   # the best hit's cosine under this: answered on a weak match
+long_context_share: 0.9          # tokens packed at or over this share of the budget, or passages left out
+long_query_words: 25
+uncited_claim_share: 0.8         # the claim floor the verdict reads
+random_share: 0.10
+max_samples: 100
+
+drift:
+  no_answer_rate: 0.15           # share of live questions with no answer, against the baseline's abstention rate
+  top_score_median: 0.10         # the best hit's cosine at the median
+  claim_share_median: 0.10
+  grounded_share: 0.10           # the judge's grounded reading at 0.50, over the samples it read
+  query_words_median: 10
+
+rules:
+  dissatisfied: a person marked the answer not helpful (POST /feedback); the strongest signal and the rarest
+  uncited: the answer left over a fifth of its claims uncited, the floor the offline verdict reads
+  low-confidence: answered, with the best passage under the cosine floor the dataset calls a near miss
+  no-answer: the abstention sentence; either the corpus does not cover it or a false abstention
+  long-context: the passages filled the token budget or some were left out; where overload shows
+  long-query: over 25 words; the multi-part and the rambling questions the benchmark has few of
+  identifier: a camelCase, dotted, snake_case or --flag token; the questions keyword search wins
+  error: the model call failed
+  random: a stable 10% of the rest, so the sample is not only the suspicious traffic

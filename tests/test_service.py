@@ -125,3 +125,16 @@ def test_versions_report(two_runs, tmp_path):  # noqa: F811
     assert "3 versions of the pipeline" in text and "| right passage retrieved |" in text
     assert "### v1 → v2: **blocked" in text and "### v2 → v1: **passes" in text
     assert "## Rollback decision criteria" in text and "**FAIL**" in text
+
+
+def test_feedback_is_recorded_against_a_trace(client, tmp_path):
+    from infra_docs_rag.observe.feedback import FeedbackLog
+
+    c, _ = client
+    c.app.state.service.feedback = FeedbackLog(tmp_path / "feedback.jsonl")
+    body = c.post("/answer", json={"question": "kubectl scale replicas"}).json()
+    r = c.post("/feedback", json={"trace_id": body["trace_id"], "helpful": False, "note": "too short"})
+    assert r.status_code == 200 and r.json()["helpful"] is False and r.json()["at"]
+    assert c.post("/feedback", json={"trace_id": "nope", "helpful": True}).status_code == 404
+    saved = FeedbackLog(tmp_path / "feedback.jsonl").by_trace()
+    assert saved[body["trace_id"]].note == "too short"
