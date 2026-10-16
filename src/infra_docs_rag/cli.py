@@ -1,6 +1,6 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | judge grade | judge calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+calibrate | judge grade | judge calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | traces | pipeline run | pipeline status | pipeline index | pipeline release |
 pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
@@ -40,6 +40,7 @@ from .evaluation.dataset_generate import save as save_generated
 from .evaluation.dataset_judge import load_reader, reading_state_of
 from .evaluation.dataset_report import write_report as write_dataset_report
 from .evaluation.dataset_run import run_dataset, to_run
+from .evaluation.diagnose import diagnose_run, load_traces, save_traces
 from .evaluation.gates import compare as compare_runs
 from .evaluation.gates import load_gates
 from .evaluation.judge_calibrate import CALIBRATION, JUDGE_REPORT, calibrate_judge, items_of, load_calibration
@@ -61,6 +62,7 @@ from .evaluation.slices import (
     load_matrix,
     slice_metrics,
 )
+from .evaluation.traces_report import write_report as write_traces_report
 from .evaluation.versions import DEFAULT_VERSION, Version
 from .evaluation.versions_report import write_report as write_versions_report
 from .generate.answer import answer as grounded_answer
@@ -131,6 +133,7 @@ CANARY = Path("eval/canary.yaml")
 DATASET_REPORT = Path("reports/dataset.md")
 METRICS_REPORT = Path("reports/metrics.md")
 REGRESSION_REPORT = Path("reports/regression.md")
+TRACES_REPORT = Path("reports/traces.md")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -691,6 +694,23 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="write the report and print the decision but exit 0 whatever it is: for regenerating the committed record of an experiment",
     )
+    diagnose_cmd = dataset_sub.add_parser(
+        "diagnose",
+        help=f"read the trace behind every failed record of a dataset run and name where it broke → {TRACES_REPORT}",
+    )
+    diagnose_cmd.add_argument(
+        "--run",
+        action="append",
+        required=True,
+        help="a saved dataset run with traces.jsonl beside it; repeatable",
+    )
+    diagnose_cmd.add_argument(
+        "--cases",
+        help="record ids to walk through in full, comma-separated (default: one per cause, up to three)",
+    )
+    diagnose_cmd.add_argument(
+        "--example", help="the record whose trace the report prints in full (default: the first case)"
+    )
     baseline_cmd = dataset_sub.add_parser(
         "baseline", help=f"the regression baseline in {BASELINE}: pin a run, or check the pin is not stale"
     )
@@ -1030,6 +1050,26 @@ def main(argv: list[str] | None = None) -> None:
                 prompt = load_prompt(version.prompt)
                 lineage = pipeline_commands.lineage(version, index, index_id, prompt, gen.name, gen.model)
                 log = TraceLog(TRACES)
+                traced: list = []
+                ds_version = dataset_version(ds.records)
+
+                def trace_record(a, j, r, reading):
+                    t = trace_answer(
+                        a,
+                        f"{version.name}:{name}",
+                        lineage,
+                        prompt.version(gen.name),
+                        j,
+                        gen.prices,
+                        example_id=r.id,
+                        run=name,
+                        dataset_version=ds_version,
+                        reading=reading,
+                    )
+                    log.append(t)
+                    traced.append(t)
+                    return t.trace_id
+
                 print(
                     f"{len(ds.records)} records through {version.name} ({version.retrieval.label}) with {gen.model} via {gen.name}"
                 )
@@ -1043,19 +1083,40 @@ def main(argv: list[str] | None = None) -> None:
                     limit=args.limit,
                     judge=None if args.no_judge else load_judge(),
                     reader=None if args.no_judge else load_reader(),
-                    tracer=lambda a, j: log.append(
-                        trace_answer(
-                            a, f"{version.name}:{name}", lineage, prompt.version(gen.name), j, gen.prices
-                        )
-                    ),
+                    tracer=trace_record,
                 )
                 lineage = lineage.model_copy(update={"generator": dg.grounding.generator})
-                saved = to_run(
-                    dg, name, version.name, version.description, lineage, dataset_version(ds.records)
-                )
+                saved = to_run(dg, name, version.name, version.description, lineage, ds_version)
+                save_traces(traced, RUNS_DIR / saved.name)
                 print(
-                    f"saved the run to {saved.save(RUNS_DIR / saved.name)}/; next: `dataset metrics --run {saved.name}`"
+                    f"saved the run and its {len(traced)} traces to {saved.save(RUNS_DIR / saved.name)}/; "
+                    f"next: `dataset metrics --run {saved.name}`"
                 )
+                return
+            if args.dataset_command == "diagnose":
+                runs = [Run.load(RUNS_DIR / name) for name in args.run]
+                traces = {run.name: load_traces(RUNS_DIR / run.name) for run in runs}
+                for run in runs:
+                    if not traces[run.name]:
+                        print(
+                            f"warning: {run.name} has no {RUNS_DIR / run.name}/traces.jsonl; the diagnosis reads the cases alone "
+                            "(scripts/backfill_traces.py writes the traces for a run made before stage 17)"
+                        )
+                results = {run.name: diagnose_run(run, ds.records, traces[run.name]) for run in runs}
+                for run in runs:
+                    for d in results[run.name]:
+                        if d.cause != "held":
+                            print(f"{run.name}  {d.id}: {d.cause} — {d.evidence}")
+                write_traces_report(
+                    runs,
+                    ds.records,
+                    traces,
+                    results,
+                    TRACES_REPORT,
+                    cases=args.cases.split(",") if args.cases else None,
+                    example=args.example,
+                )
+                print(f"wrote {TRACES_REPORT}")
                 return
             if args.dataset_command == "baseline":
                 if args.baseline_command == "set":

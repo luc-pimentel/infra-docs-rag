@@ -68,6 +68,7 @@ class Case:
     right_cited: bool | None  # a labelled right chunk was cited; None when unlabelled or no answer
     judgement: Judgement | None = None  # the judge's reading of an answer; None when there was none
     right_sources: list[bool] | None = None  # per passage in rank order, whether it answers; None unlabelled
+    trace_id: str | None = None  # the trace the run wrote for this answer, when it traced
 
     @property
     def outcome(self) -> str:
@@ -168,7 +169,7 @@ def evaluate_grounding(
     retrieval: Retrieval = DEFAULT_RETRIEVAL,
     limit: int | None = None,
     judge: Judge | None = None,
-    tracer: Callable[[Answer, Judgement | None], None] | None = None,
+    tracer: Callable[[Answer, Judgement | None], str | None] | None = None,
 ) -> Grounding:
     """`tracer`, when given, is called with every answer and its judge reading, so the run can be
     written to the trace log as well as saved."""
@@ -213,9 +214,10 @@ def evaluate_grounding(
                 ValueError
             ) as error:  # the judge is a reading, not a verdict: its absence is recorded, not fatal
                 print(f"{qid}: the judge failed ({str(error)[:120]}); no reading")
-        cases.append(Case(qid, kind, expect, hypothesis, a, retrieved, cited, judgement, flags))
+        case = Case(qid, kind, expect, hypothesis, a, retrieved, cited, judgement, flags)
         if tracer is not None:
-            tracer(a, judgement)
+            case.trace_id = tracer(a, judgement)
+        cases.append(case)
         line = f"{qid}: {a.outcome}" + (f", {a.cited_share:.0%} cited" if a.outcome == "answered" else "")
         if a.outcome == "error":
             line += f" ({a.error})"

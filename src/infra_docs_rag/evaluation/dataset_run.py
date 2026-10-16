@@ -51,7 +51,7 @@ def run_dataset(
     limit: int | None = None,
     judge: Judge | None = None,
     reader: Reader | None = None,
-    tracer: Callable[[Answer, Judgement | None], None] | None = None,
+    tracer: Callable[[Answer, Judgement | None, Record, Reading | None], str | None] | None = None,
     log: Callable[[str], None] = print,
 ) -> DatasetGrounding:
     retriever = Retriever(index, embedder, reranker)
@@ -78,11 +78,12 @@ def run_dataset(
                     reading = reader.read(a.context, r.query, r.reference_answer, marked(a))
                 except ValueError as error:
                     log(f"{r.id}: the reader failed ({str(error)[:120]}); no reading")
-        cases.append(Case(r.id, kind_of(r), expect_of(r), r.note, a, retrieved, cited, judgement, flags))
+        case = Case(r.id, kind_of(r), expect_of(r), r.note, a, retrieved, cited, judgement, flags)
         if reading is not None:
             readings[r.id] = reading
         if tracer is not None:
-            tracer(a, judgement)
+            case.trace_id = tracer(a, judgement, r, reading)
+        cases.append(case)
         line = f"{r.id}: {a.outcome}" + (
             f", {a.claim_share:.0%} of claims cited" if a.outcome == "answered" else ""
         )

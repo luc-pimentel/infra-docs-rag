@@ -11,7 +11,8 @@ uv run infra-docs-rag answer "How do I undo a bad release?"
 **Status:** the service is complete through the capstone ([`docs/capstone.md`](docs/capstone.md) is the
 design in one page, [`docs/demo.md`](docs/demo.md) the fifteen-minute demo); the evaluation track that
 follows it is four stages in: the dataset, the metrics by failure mode, the judge calibrated against
-hand labels, and the evals as regression tests with a pinned baseline (stages 13 to 16).
+hand labels, the evals as regression tests with a pinned baseline, and the traces that say where a
+failed eval broke (stages 13 to 17).
 
 ## Architecture
 
@@ -149,7 +150,17 @@ Each stage ships into this repo, so the service grows with the checklist.
   the change, two gained their passage from the depth and one lost it, and the retrieval miss the change
   was aimed at is still a miss; 2.4 s more a question) ([baseline](eval/baseline.yaml),
   [gates](eval/matrix.yaml), [report](reports/regression.md))
-- [ ] 17 · Traces that explain why an eval fails
+- [x] 17 · Traces that explain why an eval fails: every trace tagged with the record, the run and the
+  dataset version beside the lineage's prompt, retrieval, index and model versions, and read as spans
+  (retrieve, prompt, generate, verify, judge, read) with the attributes a diagnosis needs; the reranker's
+  whole order and what the pack step dropped and why recorded; every run keeping its traces beside it
+  and every case its trace id; a diagnosis of every failed record from its trace as a first-stage,
+  rerank, threshold or budget miss, an abstention or instruction the prompt did not hold, a context at
+  its budget, or generation; three cases walked from the score to the span; on the two dataset runs it names the one miss the
+  reranker depth was meant to fix as a rerank miss that got worse with depth (the first stage ranks the
+  passage third, the reranker 18th of 20 and 42nd of 50), two misses as the token budget cutting the
+  passage ranked fourth, and the adversarial losses as the prompt's abstention rule not holding
+  ([report](reports/traces.md))
 - [ ] 18 · Prompts, retrieval config and eval assets versioned together
 - [ ] 19 · Online evaluators and drift detection
 - [ ] 20 · Cost and latency as quality metrics
