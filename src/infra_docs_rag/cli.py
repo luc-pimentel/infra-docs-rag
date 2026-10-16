@@ -59,7 +59,6 @@ from .evaluation.online import (
     clusters,
     drift,
     harvest,
-    is_live,
     judge_samples,
     load_policy,
     load_windows,
@@ -968,6 +967,7 @@ def main(argv: list[str] | None = None) -> None:
                     live=live,
                     samples=picked,
                     policy=policy,
+                    rates=window_rates(traces, since, until, picked),
                 )
                 for s in picked:
                     print(f"{s.trace_id}  {', '.join(s.rules):28} {s.outcome:10} {s.question[:70]}")
@@ -990,6 +990,7 @@ def main(argv: list[str] | None = None) -> None:
 
                     read = judge_samples(window.samples, traces, chunks, load_judge())
                     window.judged_at = datetime.now(UTC).isoformat(timespec="seconds")
+                    window.refresh_judge_rate()
                     print(f"{read} samples read; wrote {window.save(ONLINE_DIR)}")
                     return
                 if args.merge:
@@ -1011,19 +1012,11 @@ def main(argv: list[str] | None = None) -> None:
                     f"{len(records)} records drafted; wrote {save_harvested(records, ds.curated.chunking, window.name, HARVESTED)}"
                 )
                 return
-            # report
+            # report: from the saved windows alone (the trace log is local; the window carries its rates)
             pin = Baseline.load(BASELINE)
             base_run = Run.load(RUNS_DIR / pin.run)
-            traces = log.read()
-            live_total = sum(1 for t in traces if is_live(t))
-            from datetime import datetime
-
-            rates = [
-                window_rates(
-                    traces, datetime.fromisoformat(w.since), datetime.fromisoformat(w.until), w.samples
-                )
-                for w in windows
-            ]
+            live_total = sum(w.live for w in windows)
+            rates = [w.rates for w in windows]
             drifts = [
                 drift(rates[i], baseline_rates(base_run), w.policy, rates[i - 1] if i else None)
                 for i, w in enumerate(windows)

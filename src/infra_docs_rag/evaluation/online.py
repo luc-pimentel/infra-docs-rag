@@ -127,6 +127,14 @@ class Window(BaseModel):
     samples: list[Sample]
     policy: Policy
     judged_at: str | None = None
+    rates: dict[
+        str, float | None
+    ] = {}  # the window's rates over every live trace in it, at sample time (the log is local)
+
+    def refresh_judge_rate(self) -> None:
+        """The grounded share over the samples the judge read, once `online judge` ran."""
+        grounded = [s.judgement.grounded for s in self.samples if s.judgement is not None]
+        self.rates["grounded_share"] = (sum(g >= 0.5 for g in grounded) / len(grounded)) if grounded else None
 
     def save(self, directory: Path = ONLINE_DIR) -> Path:
         directory.mkdir(parents=True, exist_ok=True)

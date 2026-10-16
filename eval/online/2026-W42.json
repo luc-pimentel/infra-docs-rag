@@ -992,5 +992,12 @@
       "random": "a stable 10% of the rest, so the sample is not only the suspicious traffic"
     }
   },
-  "judged_at": "2026-10-16T01:09:21+00:00"
+  "judged_at": "2026-10-16T01:09:21+00:00",
+  "rates": {
+    "no_answer_rate": 0.3191489361702128,
+    "top_score_median": 0.7446291446685791,
+    "claim_share_median": 1.0,
+    "grounded_share": 0.9090909090909091,
+    "query_words_median": 9.0
+  }
 }
