@@ -1,6 +1,6 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | judge grade | judge calibrate | evaluate-pipeline | evaluate-efficiency | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | dataset freeze | online sample | online judge | online report | online promote | safety run | safety grade | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+calibrate | judge grade | judge calibrate | evaluate-pipeline | evaluate-efficiency | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | dataset freeze | online sample | online judge | online report | online promote | safety run | safety grade | scorecard | traces | pipeline run | pipeline status | pipeline index | pipeline release |
 pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
@@ -90,6 +90,8 @@ from .evaluation.safety import load_policy as load_safety_policy
 from .evaluation.safety import run_name as safety_run_name
 from .evaluation.safety_report import held_shown
 from .evaluation.safety_report import write_report as write_safety_report
+from .evaluation.scorecard import SCORECARD_DATA, SCORECARD_REPORT, Inputs, build, frozen_now
+from .evaluation.scorecard_report import write_report as write_scorecard_report
 from .evaluation.slices import (
     check_matrix,
     check_slice_gates,
@@ -820,6 +822,20 @@ def main(argv: list[str] | None = None) -> None:
         "--version", help="a version from eval/versions.yaml (default: the current release)"
     )
     serve_cmd.add_argument("--no-cache", action="store_true", help="no generation cache")
+    scorecard_cmd = commands.add_parser(
+        "scorecard",
+        help=f"the state of every component and the trend of every core metric → {SCORECARD_REPORT} and {SCORECARD_DATA}; exit 1 when a component fails",
+    )
+    scorecard_cmd.add_argument(
+        "--candidate",
+        default="dataset-v4-rerank-50-claude-code",
+        help="the dataset run the quality-gates tile compares against the baseline (default: the committed candidate)",
+    )
+    scorecard_cmd.add_argument(
+        "--no-fail",
+        action="store_true",
+        help="exit 0 whatever the state: for regenerating the committed record",
+    )
     safety_cmd = commands.add_parser(
         "safety",
         help=f"the safety policy ({SAFETY}): answer its records through a version and grade the replies → {SAFETY_REPORT}",
@@ -1000,6 +1016,36 @@ def main(argv: list[str] | None = None) -> None:
             )
             write_latency_report(workload, runs, LATENCY_REPORT)
             print(f"wrote {LATENCY_REPORT}")
+        elif args.command == "scorecard":
+            runs = {d.name: Run.load(d) for d in sorted(RUNS_DIR.iterdir()) if (d / "manifest.json").exists()}
+            ds = load_dataset(DATASET_DIR)
+            pin = Baseline.load(BASELINE) if BASELINE.exists() else None
+            judge_model = (
+                Run.load(RUNS_DIR / pin.run).manifest.judge if pin and (RUNS_DIR / pin.run).exists() else None
+            )
+            card = build(
+                Inputs(
+                    runs=runs,
+                    releases=Releases.load(RELEASES),
+                    baseline=pin,
+                    frozen=Frozen.load(FROZEN) if FROZEN.exists() else None,
+                    frozen_now=frozen_now(ds.records, grader_version(load_rubric()), judge_model),
+                    records=ds.records,
+                    matrix=load_matrix(),
+                    gates=load_gates(),
+                    safety_policy=load_safety_policy(SAFETY) if SAFETY.exists() else None,
+                    windows=load_windows(ONLINE_DIR),
+                    candidate=args.candidate if args.candidate in runs else None,
+                )
+            )
+            write_scorecard_report(card, SCORECARD_REPORT)
+            card.save(SCORECARD_DATA)
+            for s in card.statuses:
+                print(f"{s.state:5} {s.component}: {s.detail}")
+            print(f"{card.worst}; wrote {SCORECARD_REPORT} and {SCORECARD_DATA}")
+            if card.worst == "fail" and not args.no_fail:
+                parser.exit(1)
+            return
         elif args.command == "safety":
             policy = load_safety_policy(SAFETY)
             if args.safety_command == "run":

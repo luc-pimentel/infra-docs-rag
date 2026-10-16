@@ -549,3 +549,28 @@ uv run infra-docs-rag safety run --generator claude-code --version v3-budget   #
 uv run infra-docs-rag safety grade                                               # every saved safety run under the current policy → reports/safety.md
 ```
 
+## 15. The evaluation system as a workflow
+
+Everything above as one system: what runs when, what each run reads and writes, what a failure
+triggers, who acts. [`../docs/evals.md`](../docs/evals.md) is the flow (the frozen assets, the
+offline evals, the release, production and its feedback, the operations jobs) and the trigger table:
+a pipeline change (a dataset run and a safety run under a version, locally, with model calls), the PR
+check (every saved-run check, no model call, and the report drift check), the pre-release gate
+(`pipeline release`: the freeze, the experiment manifest, the safety run, the benchmark gates), the
+nightly job (`.github/workflows/nightly.yml`: the same checks on `main` every morning, the scorecard as
+an artifact, an issue opened or updated on failure), post-release monitoring (the canary, the weekly
+online window) and the benchmark refresh (harvest, merge, rerun the baseline, pin, freeze).
+
+**The scorecard** (`scorecard` → [`../reports/scorecard.md`](../reports/scorecard.md),
+`scorecard.json`): the latest state of every component (the release, the baseline pin, the freeze, the
+quality gates on the committed candidate, the release version's safety run, the budgets, the latest
+online window) as a status with its reason, and the trend of every core metric (held, right passage
+read, context recall, grounded, fabricated, false abstention, out-of-scope abstained, cost per request,
+p95) over the releases in order and over the dataset runs in order, with the critical slices and the
+online windows. No model call; the nightly job regenerates it and the PR check keeps it from drifting.
+The command exits 1 when a component fails, `--no-fail` for the committed record.
+
+```sh
+uv run infra-docs-rag scorecard             # → reports/scorecard.md, eval/scorecard.json; exit 1 on a failing component
+```
+

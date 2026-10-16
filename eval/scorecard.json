@@ -1,0 +1,177 @@
+{
+  "statuses": [
+    {
+      "component": "release",
+      "state": "ok",
+      "detail": "r4: `v3-budget` on run `v3-budget-claude-code`, 2026-10-12"
+    },
+    {
+      "component": "baseline",
+      "state": "ok",
+      "detail": "`dataset-v3-budget-claude-code`, dataset 74+e1454a76bb7b"
+    },
+    {
+      "component": "freeze",
+      "state": "ok",
+      "detail": "holds since 2026-10-16"
+    },
+    {
+      "component": "quality gates",
+      "state": "fail",
+      "detail": "`dataset-v4-rerank-50-claude-code` against the baseline: block; blocked: 1 critical gate(s) failed (`category=adversarial` answers.held"
+    },
+    {
+      "component": "safety",
+      "state": "fail",
+      "detail": "`safety-v3-budget-claude-code`: 4 pass, 10 refusal, 0 disclosure, 4 unsupported; 4 of 18 unsupported claims (22%); the policy allows 10%"
+    },
+    {
+      "component": "budgets",
+      "state": "ok",
+      "detail": "the release is within every budget"
+    },
+    {
+      "component": "online",
+      "state": "ok",
+      "detail": "`2026-W42`: 37 of 47 live traces sampled, 9 failed; no drift"
+    }
+  ],
+  "series": [
+    {
+      "name": "releases",
+      "points": [
+        {
+          "run": "v1-dense-claude-code",
+          "version": "v1-dense",
+          "date": "2026-10-12",
+          "values": {
+            "answers.held": 0.782608695652174,
+            "retrieval.right_retrieved": 0.8679245283018868,
+            "retrieval.context_recall": null,
+            "grounding.judge_grounded": 0.9629629629629629,
+            "grounding.judge_fabricated": 0.018518518518518517,
+            "abstention.in_scope": 0.09433962264150944,
+            "abstention.out_of_scope": 1.0,
+            "cost.usd_per_request": 0.04290170724637681,
+            "latency.end_to_end_ms_p95": 7275.438625001305
+          }
+        },
+        {
+          "run": "v2-hybrid-rerank-claude-code",
+          "version": "v2-hybrid-rerank",
+          "date": "2026-10-12",
+          "values": {
+            "answers.held": 0.9130434782608695,
+            "retrieval.right_retrieved": 0.9622641509433962,
+            "retrieval.context_recall": null,
+            "grounding.judge_grounded": 0.9642857142857143,
+            "grounding.judge_fabricated": 0.017857142857142856,
+            "abstention.in_scope": 0.05660377358490566,
+            "abstention.out_of_scope": 1.0,
+            "cost.usd_per_request": 0.041662086956521745,
+            "latency.end_to_end_ms_p95": 8365.841292000187
+          }
+        },
+        {
+          "run": "v3-budget-claude-code",
+          "version": "v3-budget",
+          "date": "2026-10-12",
+          "values": {
+            "answers.held": 0.927536231884058,
+            "retrieval.right_retrieved": 0.9622641509433962,
+            "retrieval.context_recall": null,
+            "grounding.judge_grounded": 1.0,
+            "grounding.judge_fabricated": 0.0,
+            "abstention.in_scope": 0.03773584905660377,
+            "abstention.out_of_scope": 1.0,
+            "cost.usd_per_request": 0.03979040869565218,
+            "latency.end_to_end_ms_p95": 10119.431333002285
+          }
+        }
+      ]
+    },
+    {
+      "name": "dataset",
+      "points": [
+        {
+          "run": "dataset-v3-budget-claude-code",
+          "version": "v3-budget",
+          "date": "2026-10-14",
+          "values": {
+            "answers.held": 0.8783783783783784,
+            "retrieval.right_retrieved": 0.9137931034482759,
+            "retrieval.context_recall": null,
+            "grounding.judge_grounded": 0.9672131147540983,
+            "grounding.judge_fabricated": 0.0,
+            "abstention.in_scope": 0.05084745762711865,
+            "abstention.out_of_scope": 1.0,
+            "cost.usd_per_request": 0.04115489189189189,
+            "latency.end_to_end_ms_p95": 9089.492708002974
+          }
+        },
+        {
+          "run": "dataset-v4-rerank-50-claude-code",
+          "version": "v4-rerank-50",
+          "date": "2026-10-15",
+          "values": {
+            "answers.held": 0.8783783783783784,
+            "retrieval.right_retrieved": 0.9310344827586207,
+            "retrieval.context_recall": null,
+            "grounding.judge_grounded": 0.9682539682539683,
+            "grounding.judge_fabricated": 0.0,
+            "abstention.in_scope": 0.03389830508474576,
+            "abstention.out_of_scope": 1.0,
+            "cost.usd_per_request": 0.043130864864864865,
+            "latency.end_to_end_ms_p95": 11662.03345800098
+          }
+        }
+      ]
+    }
+  ],
+  "slices": [
+    {
+      "slice": "category=adversarial",
+      "values": [
+        0.7777777777777778,
+        0.5555555555555556
+      ]
+    },
+    {
+      "slice": "category=no-answer",
+      "values": [
+        1.0,
+        1.0
+      ]
+    },
+    {
+      "slice": "split=test",
+      "values": [
+        0.8727272727272727,
+        0.8545454545454545
+      ]
+    },
+    {
+      "slice": "difficulty=hard",
+      "values": [
+        0.8823529411764706,
+        0.8823529411764706
+      ]
+    },
+    {
+      "slice": "category=fact-lookup",
+      "values": [
+        0.8372093023255814,
+        0.8837209302325582
+      ]
+    }
+  ],
+  "windows": [
+    {
+      "window": "2026-W42",
+      "live": 47,
+      "sampled": 37,
+      "failed": 9,
+      "drifted": []
+    }
+  ]
+}
