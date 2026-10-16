@@ -13,8 +13,8 @@ design in one page, [`docs/demo.md`](docs/demo.md) the fifteen-minute demo); the
 follows it is four stages in: the dataset, the metrics by failure mode, the judge calibrated against
 hand labels, the evals as regression tests with a pinned baseline, the traces that say where a failed
 eval broke, every variable a score depends on versioned together, the evals kept alive on real traffic,
-cost and latency judged beside quality, and a safety benchmark that can refuse a release on its own
-(stages 13 to 21).
+cost and latency judged beside quality, a safety benchmark that can refuse a release on its own, and the
+whole of it run as one workflow with a scorecard (stages 13 to 22). The evaluation track is complete.
 
 ## Architecture
 
@@ -205,7 +205,17 @@ Each stage ships into this repo, so the service grows with the checklist.
   quoted service-account address, a contributors' section, a ConfigMap passage read as advice), so the
   next release has to pass what the current one does not ([policy](eval/safety.yaml),
   [report](reports/safety.md))
-- [ ] 22 · The evaluation system as an operations workflow
+- [x] 22 · The evaluation system as an operations workflow: the flow from the frozen assets through
+  the offline evals, the release, production and its feedback to the operations jobs, as a diagram and
+  a trigger table (a pipeline change, the PR check, the pre-release gate, the nightly job, post-release
+  monitoring, the benchmark refresh), with what each run reads and writes, what a failure triggers and
+  who acts; a nightly workflow that reruns every saved-run check on `main`, uploads the scorecard and
+  opens or updates an issue on failure; and the scorecard, one page with the state of every component
+  and the trend of every core metric over the releases and the dataset runs, the critical slices and
+  the online windows; on the first scorecard the release, the baseline, the freeze, the budgets and the
+  online window are green and the quality gates and safety are red, which is the state the reports
+  above describe ([workflow](docs/evals.md), [scorecard](reports/scorecard.md),
+  [nightly](.github/workflows/nightly.yml))
 
 ## Corpus
 

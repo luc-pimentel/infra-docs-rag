@@ -1,0 +1,68 @@
+name: nightly
+
+# The saved-run checks the PR check runs, on main, every night and on demand, plus the scorecard as an
+# artifact. No model call: what this catches is a drift that landed between pull requests (a dependency,
+# an environment, a file edited on main) and the scorecard's own regeneration. A failure opens an issue,
+# or comments on the open one, so it has an owner by morning. The model-call steps (a dataset run, a
+# safety run, the online judge) run locally, on the subscription, and commit their results.
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: tesseract (the OCR fallback the PDF tests exercise)
+        run: sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr
+      - run: uv sync --frozen
+      - name: tests
+        run: uv run pytest -q
+      - name: the saved-run checks
+        run: |
+          uv run infra-docs-rag evaluate-pipeline --baseline v2-hybrid-rerank-claude-code --candidate v3-budget-claude-code
+          uv run infra-docs-rag dataset metrics --run dataset-v3-budget-claude-code
+          uv run infra-docs-rag dataset baseline check
+          uv run infra-docs-rag dataset freeze --check
+          uv run infra-docs-rag dataset compare --candidate dataset-v4-rerank-50-claude-code --no-block
+          uv run infra-docs-rag dataset diagnose --run dataset-v3-budget-claude-code --run dataset-v4-rerank-50-claude-code
+          uv run infra-docs-rag online report
+          uv run infra-docs-rag evaluate-efficiency
+          uv run infra-docs-rag safety grade
+          uv run infra-docs-rag judge calibrate
+      - name: the scorecard
+        run: uv run infra-docs-rag scorecard
+      - name: no report drift
+        run: git diff --exit-code --stat -- reports/ eval/scorecard.json || (echo "a report drifted from what the saved runs say" && exit 1)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: scorecard
+          path: |
+            reports/scorecard.md
+            eval/scorecard.json
+      - name: open or update the issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="nightly evals failed on $(date -u +%Y-%m-%d)"
+          body="The nightly evaluation checks failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. See docs/evals.md, \"When a check is red\"."
+          existing=$(gh issue list --label nightly --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh label create nightly --description "opened by the nightly evals job" --color d73a4a 2>/dev/null || true
+            gh issue create --title "$title" --body "$body" --label nightly
+          fi
