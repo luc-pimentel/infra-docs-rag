@@ -27,9 +27,17 @@ jobs:
         run: |
           uv run infra-docs-rag evaluate-pipeline --baseline v2-hybrid-rerank-claude-code --candidate v3-budget-claude-code
           uv run infra-docs-rag dataset metrics --run dataset-v3-budget-claude-code
+      - name: regression baseline and the saved comparison
+        # No model call: the pin has to match its run and the dataset it answered, and the committed
+        # candidate's comparison regenerates from the saved runs (the drift check below reads it). The
+        # exit code of `dataset compare` is the gate a change clears before it is released; the committed
+        # candidate is an experiment whose decision the report records, so it is not asserted here.
+        run: |
+          uv run infra-docs-rag dataset baseline check
+          uv run infra-docs-rag dataset compare --candidate dataset-v4-rerank-50-claude-code --no-block
       - name: judge calibration on the saved grades
         # No model call either: the grader's saved scores against the hand labels; fails when a labelled
         # answer has no grade, so a label added without `judge grade` is caught here.
         run: uv run infra-docs-rag judge calibrate
       - name: no report drift
-        run: git diff --exit-code --stat -- reports/evaluation.md reports/metrics.md reports/judge.md || (echo "regenerate the reports and commit them" && exit 1)
+        run: git diff --exit-code --stat -- reports/evaluation.md reports/metrics.md reports/judge.md reports/regression.md || (echo "regenerate the reports and commit them" && exit 1)

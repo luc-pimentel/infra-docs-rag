@@ -13,6 +13,7 @@ chunks, and `audit.yaml` says which of its examples were kept, edited or discard
 is the curated set plus what the audit kept.
 """
 
+import hashlib
 import re
 from collections import Counter
 from dataclasses import dataclass, field
@@ -219,6 +220,17 @@ def load_yaml(path: Path, model: type[BaseModel]) -> BaseModel:
         return model.model_validate(yaml.safe_load(path.read_text()) or {})
     except ValidationError as error:
         raise ValueError(f"{path}: {error}") from error
+
+
+def dataset_version(records: list[Record]) -> str:
+    """`74+1f2e3d4c5b6a`: how many records, then a hash of every field of every one, in id order, so the
+    same set in any file layout has the same version and one edited record changes it. A saved dataset
+    run carries it, and the regression baseline (regression.py) is checked against it."""
+    h = hashlib.sha256()
+    for r in sorted(records, key=lambda x: x.id):
+        h.update(r.model_dump_json().encode())
+        h.update(b"\n")
+    return f"{len(records)}+{h.hexdigest()[:12]}"
 
 
 def load_records(path: Path = RECORDS) -> RecordSet:

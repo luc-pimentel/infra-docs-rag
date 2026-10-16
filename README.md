@@ -10,8 +10,8 @@ uv run infra-docs-rag answer "How do I undo a bad release?"
 
 **Status:** the service is complete through the capstone ([`docs/capstone.md`](docs/capstone.md) is the
 design in one page, [`docs/demo.md`](docs/demo.md) the fifteen-minute demo); the evaluation track that
-follows it is three stages in: the dataset, the metrics by failure mode, and the judge calibrated against
-hand labels (stages 13 to 15).
+follows it is four stages in: the dataset, the metrics by failure mode, the judge calibrated against
+hand labels, and the evals as regression tests with a pinned baseline (stages 13 to 16).
 
 ## Architecture
 
@@ -138,7 +138,17 @@ Each stage ships into this repo, so the service grows with the checklist.
   exact, the fabricated ceiling moved from 0.50 to 0.85 where it catches every fabrication with no false
   alarm, the reader's agreement question found weak (κ 0.42) and its gates left loose
   ([rubric](eval/rubric.yaml), [labels](eval/calibration.yaml), [report](reports/judge.md))
-- [ ] 16 · Evals as regression tests for every change
+- [x] 16 · Evals as regression tests for every change: a pinned baseline run with the version of
+  everything behind it, the dataset included, that a comparison refuses when stale; a candidate run
+  against it slice by slice and record by record, every record won and lost with the answers behind the
+  losses; per-slice `no-drop` gates that block a change which lifts the whole set and drops a critical
+  slice, and the report naming the regressions the aggregate would have hidden; the decision as block,
+  hold or ship; measured on one intentional change, the cross-encoder over 50 candidates instead of 20
+  (blocked: the whole set holds the same 65 of 74 and the adversarial slice drops from 7 to 5 of 9; of the
+  nine records that flipped, five read the same passages in both runs, the generator's variance and not
+  the change, two gained their passage from the depth and one lost it, and the retrieval miss the change
+  was aimed at is still a miss; 2.4 s more a question) ([baseline](eval/baseline.yaml),
+  [gates](eval/matrix.yaml), [report](reports/regression.md))
 - [ ] 17 · Traces that explain why an eval fails
 - [ ] 18 · Prompts, retrieval config and eval assets versioned together
 - [ ] 19 · Online evaluators and drift detection

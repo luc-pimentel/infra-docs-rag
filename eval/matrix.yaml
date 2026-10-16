@@ -11,7 +11,12 @@
 # `gates` are the pass/fail rules a change has to clear, each on one slice (`all`, or
 # `<field>=<value>` for category, failure_mode, difficulty, split, origin). The rules are the ones
 # eval/gates.yaml uses: min / max against a value, no-drop / no-rise against a baseline run with a
-# tolerance. A critical gate that fails exits 1; that is the PR check.
+# tolerance. A critical gate that fails exits 1; that is the PR check. `dataset compare` (stage 16)
+# runs them with the baseline eval/baseline.yaml pins: the per-slice no-drop gates are what make a
+# change that lifts the whole set and drops a critical slice block anyway. Tolerances are read off
+# the slice sizes: one record's worth is noise, two are a regression (adversarial 9, no-answer 6,
+# hard 34, test 55, fact-lookup 43, multi-hop 5, stale 6, ambiguous 5); a slice of five is too small
+# to block on, so its gate warns.
 
 matrix:
   - failure_mode: none
@@ -159,3 +164,56 @@ gates:
     tolerance: 0.05
     critical: false
     why: agreement with the reference answers is the newest reading and the least calibrated; a warning
+
+  # Per-slice regression gates (stage 16): a critical slice that drops past its tolerance blocks the
+  # change even when `all` improves. Critical where the slice is big enough for two records to mean
+  # something; a warning on the slices of five or six.
+  - slice: category=adversarial
+    metric: answers.held
+    rule: no-drop
+    tolerance: 0.12
+    why: the adversarial records are where a prompt or retrieval change shows as a confident wrong answer; one of nine is noise, two block
+
+  - slice: category=no-answer
+    metric: abstention.expected
+    rule: no-drop
+    why: six records the corpus does not answer; one more answered than the baseline is one hallucination more, so no slack
+
+  - slice: split=test
+    metric: answers.held
+    rule: no-drop
+    tolerance: 0.04
+    why: the held-out split; two of 55 is 3.6%, three is a regression a rule tuned on dev did not catch
+
+  - slice: difficulty=hard
+    metric: answers.held
+    rule: no-drop
+    tolerance: 0.06
+    why: the hard records are where a retrieval change shows first; two of 34 is 5.9%
+
+  - slice: category=fact-lookup
+    metric: answers.held
+    rule: no-drop
+    tolerance: 0.05
+    why: the bulk of the set; two of 43 is 4.7%, and a change that lifts the aggregate here while another slice drops is the case the slice gates exist for
+
+  - slice: category=multi-hop
+    metric: hops.covered
+    rule: no-drop
+    tolerance: 0.2
+    critical: false
+    why: five records; one fewer answer citing both passages warns, it cannot block
+
+  - slice: category=stale
+    metric: stale.deprecation_named
+    rule: no-drop
+    tolerance: 0.2
+    critical: false
+    why: six records read by the reader's least calibrated question; a warning
+
+  - slice: category=ambiguous
+    metric: ambiguity.readings_named
+    rule: no-drop
+    tolerance: 0.2
+    critical: false
+    why: five records; a warning
