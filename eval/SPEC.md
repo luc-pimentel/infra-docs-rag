@@ -417,7 +417,7 @@ each as a version or a content hash: the pipeline (its name, the retrieval confi
 wording, the index, the embedding model, the chunking, the ingest), the model and how it was called
 (generator, backend, effort), the dataset (section 6, `<records>+<hash>`) and the benchmark (the three
 question files), the grader (`<rubric name>+<hash of the grader's prompt>`) and the judge, the gates
-(`matrix.yaml`, `gates.yaml`), and the safety policy (`safety.yaml`, section 13; `none` until it
+(`matrix.yaml`, `gates.yaml`), and the safety policy (`safety.yaml`, section 14; `none` until it
 exists). The variables are grouped as *retrieval, prompt, corpus, model, dataset, grader, gates,
 safety*; `scripts/backfill_experiments.py` writes the manifest onto a run saved before this stage.
 
@@ -483,5 +483,34 @@ uv run infra-docs-rag online sample               # the window → eval/online/<
 uv run infra-docs-rag online judge                # jev on the answered samples
 uv run infra-docs-rag online report               # → reports/online.md
 uv run infra-docs-rag online promote --n 10       # → eval/dataset/harvested.yaml; then --merge
+```
+
+## 13. Cost and latency as quality metrics
+
+A change is judged on what it held, what it spent and how long it took, together. Every run reports
+them (`evaluate-efficiency` → [`../reports/efficiency.md`](../reports/efficiency.md)): records held,
+calls and cache hits, tokens in and out, cost per request at list price, the judge's cost, mean,
+median and 95th-percentile latency, and two derived numbers, records held per dollar and per minute
+of p95 wait. Three metrics are new to section 3: `cost.usd_per_request`, `cost.tokens_total`,
+`latency.end_to_end_ms_p95`, and `cache.hit_share` (calls answered from the generation cache; not
+measured on a run that made none, so a gate on it may say `skip_unmeasured`).
+
+**The tradeoff rule.** A before/after pair *buys quality* when the candidate holds at least two
+records more (one is noise). It is **worth it** when it does so within 25% more cost per request and
+25% more p95; **not worth it** past either, or when the quality is flat and the cost or the time rose;
+**free** when the quality is flat and the cost or the p95 fell by 5% or more; **a loss** when it holds
+fewer. The report applies it to the releases in order, to the pinned baseline against every other
+dataset run of the same dataset version, and to a run against its replay through the cache.
+
+**The budgets.** Gates, so they are enforced where a decision is taken: in
+[`gates.yaml`](gates.yaml) for the release and [`matrix.yaml`](matrix.yaml) for a dataset run, the
+most a request may cost (`cost.usd_per_request ≤ 0.06`), the longest the 95th percentile may take
+(`latency.end_to_end_ms_p95 ≤ 15000`), and, on a replay, how often the cache has to answer
+(`cache.hit_share ≥ 0.9`, skipped when not measured, a warning). A candidate that clears every slice
+gate and breaks a budget is refused.
+
+```sh
+uv run infra-docs-rag evaluate-efficiency                                   # → reports/efficiency.md
+uv run infra-docs-rag evaluate-grounding --cache --save <run>-replay          # a replay, for the cache hit share
 ```
 

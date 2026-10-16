@@ -209,11 +209,19 @@ class Frozen(BaseModel):
             if getattr(self, f) != getattr(current, f)
         ]
 
+    ANSWER_FIELDS: ClassVar[tuple[str, ...]] = (
+        "dataset_version",
+        "benchmark_version",
+        "grader_version",
+        "judge",
+    )
+
     def matches(self, experiment: ExperimentManifest) -> list[str]:
-        """What a run's experiment manifest does not share with the freeze: a run read under other
-        assets than the ones the decision is pinned to."""
+        """What a run's experiment manifest does not share with the freeze, among the assets that shaped
+        its answers and readings (the dataset, the benchmark, the grader, the judge). The gates and the
+        policy shape the decision, not the run, and are read from the freeze itself."""
         out = []
-        for f in self.FIELDS:
+        for f in self.ANSWER_FIELDS:
             mine, theirs = getattr(self, f), getattr(experiment, f)
             if f == "dataset_version" and theirs is None:
                 continue  # a benchmark run names no dataset

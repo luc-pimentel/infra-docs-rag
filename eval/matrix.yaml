@@ -217,3 +217,17 @@ gates:
     tolerance: 0.2
     critical: false
     why: five records; a warning
+
+  # Budgets (stage 20): a dataset run is held to the same cost and latency limits as a release.
+  - slice: all
+    metric: cost.usd_per_request
+    rule: max
+    value: 0.06
+    why: the release budget, on the dataset run; the baseline answers at $0.041
+
+  - slice: all
+    metric: latency.end_to_end_ms_p95
+    rule: max
+    value: 15000
+    why: the release budget, on the dataset run; the baseline's p95 is 9.1 s, v4's 11.7 s
+

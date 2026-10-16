@@ -24,6 +24,9 @@ class Gate(BaseModel):
     tolerance: float = 0.0  # no-drop / no-rise: how far past the baseline the candidate may go
     relative: bool = False  # tolerance as a share of the baseline's value, instead of in its units
     critical: bool = True  # a failure blocks; otherwise it warns
+    skip_unmeasured: bool = (
+        False  # a run with nothing to measure passes instead of failing (the cache hit share)
+    )
     why: str = ""
 
     @model_validator(mode="after")
@@ -82,6 +85,8 @@ class GateResult:
 def check(gate: Gate, baseline: Metric | None, candidate: Metric) -> GateResult:
     value = candidate.value
     if value is None:
+        if gate.skip_unmeasured:
+            return GateResult(gate, baseline, candidate, True, "not measured in this run; skipped")
         return GateResult(gate, baseline, candidate, False, "nothing in the candidate run measures this")
     if gate.rule == "min":
         return GateResult(

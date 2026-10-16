@@ -8,10 +8,10 @@ dataset_version: 74+e1454a76bb7b
 benchmark_version: benchmark+de191035db86
 grader_version: answer-quality-v1+11392d5a1f8c
 judge: jev-1.13.0
-matrix_version: matrix+f90313c126e2
-gates_version: gates+cb9f511e3e24
+matrix_version: matrix+89737319b52c
+gates_version: gates+4a89da166079
 safety_version: none
-frozen_at: '2026-10-16T00:51:29+00:00'
-git_sha: cd0b286
-note: 'the stage 18 freeze: the dataset, benchmark, rubric, gates and matrix the v3
-  baseline and the v4 comparison were read under'
+frozen_at: '2026-10-16T01:15:11+00:00'
+git_sha: f555a13
+note: 'stage 20: the budgets added to gates.yaml and matrix.yaml (cost per request,
+  p95, cache hit share); dataset, benchmark, grader and judge unchanged'

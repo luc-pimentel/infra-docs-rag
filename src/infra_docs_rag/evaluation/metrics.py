@@ -112,6 +112,7 @@ def metrics(run: Run) -> dict[str, Metric]:
     generate_ms = [c.generated.ms for c in called]
     end_to_end = [c.end_to_end_ms for c in cases]
     retrieve_ms = [c.retrieve_ms for c in cases]
+    cached = [c for c in called if c.generated.cached]
 
     def m(name: str, value: float | None, shown: str, better: Better, description: str) -> Metric:
         return Metric(name, value, shown, better, description)
@@ -259,6 +260,20 @@ def metrics(run: Run) -> dict[str, Metric]:
             "generation cost per thousand questions, abstentions at the threshold included",
         ),
         m(
+            "cost.usd_per_request",
+            cost / n if n else None,
+            f"${cost / n:.4f}" if n else "–",
+            "lower",
+            "generation cost per question at list prices, abstentions at the threshold included",
+        ),
+        m(
+            "cost.tokens_total",
+            float(tokens_in + tokens_out),
+            f"{tokens_in + tokens_out:,}",
+            "lower",
+            "input plus output tokens over the run",
+        ),
+        m(
             "cost.tokens_in_per_call",
             tokens_in / len(called) if called else None,
             f"{tokens_in // len(called):,}" if called else "–",
@@ -294,6 +309,20 @@ def metrics(run: Run) -> dict[str, Metric]:
             "lower",
             "retrieval plus generation per question, at the 90th percentile",
         ),
+        m(
+            "latency.end_to_end_ms_p95",
+            percentile(end_to_end, 0.95),
+            ms(percentile(end_to_end, 0.95)),
+            "lower",
+            "retrieval plus generation per question, at the 95th percentile: the budget the release is held to",
+        ),
+        m(
+            "cache.hit_share",
+            share(cached, called) if cached else None,
+            shown_share(cached, called) if cached else "–",
+            "higher",
+            "calls answered from the generation cache; not measured on a run that made none",
+        ),
     ]
     return {x.name: x for x in out}
 
@@ -305,4 +334,5 @@ GROUPS = {
     "answers": "Expectations",
     "cost": "Cost",
     "latency": "Latency",
+    "cache": "Cache",
 }

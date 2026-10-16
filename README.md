@@ -12,7 +12,8 @@ uv run infra-docs-rag answer "How do I undo a bad release?"
 design in one page, [`docs/demo.md`](docs/demo.md) the fifteen-minute demo); the evaluation track that
 follows it is four stages in: the dataset, the metrics by failure mode, the judge calibrated against
 hand labels, the evals as regression tests with a pinned baseline, the traces that say where a failed
-eval broke, and every variable a score depends on versioned together (stages 13 to 18).
+eval broke, every variable a score depends on versioned together, the evals kept alive on real traffic,
+and cost and latency judged beside quality (stages 13 to 20).
 
 ## Architecture
 
@@ -182,7 +183,14 @@ Each stage ships into this repo, so the service grows with the checklist.
   threshold but the no-answer rate up 14 points on the baseline's, and the ten harvested records mostly
   the corpus gaps people marked unhelpful (sync waves, scrape configs, `rate` vs `irate`, bearer tokens)
   ([policy](eval/online.yaml), [report](reports/online.md), [harvested](eval/dataset/harvested.yaml))
-- [ ] 20 · Cost and latency as quality metrics
+- [x] 20 · Cost and latency as quality metrics: every run's records held, calls and cache hits,
+  tokens, cost per request, judge cost, mean, median and p95 latency and records held per dollar and per
+  minute of wait, side by side; a tradeoff rule (quality bought within 25% more cost and 25% more p95 is
+  worth it, flat quality bought with time or money is not, flat quality cheaper is free) applied to the
+  releases in order, to the baseline against the candidate and to a run against its cache replay: v1 to
+  v2 worth it, v3's budget cut free on the median and not on the p95, v4's depth not worth it, the replay
+  free; cost per request, p95 and cache-hit budgets as gates on the release and on a dataset run
+  ([report](reports/efficiency.md), [gates](eval/gates.yaml))
 - [ ] 21 · Safety and guardrail evals
 - [ ] 22 · The evaluation system as an operations workflow
 

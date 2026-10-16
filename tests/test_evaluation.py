@@ -138,7 +138,7 @@ def test_metrics_read_retrieval_grounding_abstention_and_cost_off_a_run(two_runs
     before, after = metrics(base), metrics(cand)
     assert all(
         isinstance(m, Metric)
-        and m.group in ("retrieval", "grounding", "abstention", "answers", "cost", "latency")
+        and m.group in ("retrieval", "grounding", "abstention", "answers", "cost", "latency", "cache")
         for m in before.values()
     )
     assert (

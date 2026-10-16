@@ -38,9 +38,10 @@ jobs:
           uv run infra-docs-rag dataset compare --candidate dataset-v4-rerank-50-claude-code --no-block
           uv run infra-docs-rag dataset diagnose --run dataset-v3-budget-claude-code --run dataset-v4-rerank-50-claude-code
           uv run infra-docs-rag online report
+          uv run infra-docs-rag evaluate-efficiency
       - name: judge calibration on the saved grades
         # No model call either: the grader's saved scores against the hand labels; fails when a labelled
         # answer has no grade, so a label added without `judge grade` is caught here.
         run: uv run infra-docs-rag judge calibrate
       - name: no report drift
-        run: git diff --exit-code --stat -- reports/evaluation.md reports/metrics.md reports/judge.md reports/regression.md reports/traces.md reports/online.md || (echo "regenerate the reports and commit them" && exit 1)
+        run: git diff --exit-code --stat -- reports/evaluation.md reports/metrics.md reports/judge.md reports/regression.md reports/traces.md reports/online.md reports/efficiency.md || (echo "regenerate the reports and commit them" && exit 1)

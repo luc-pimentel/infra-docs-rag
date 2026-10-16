@@ -1,6 +1,6 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | judge grade | judge calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | dataset freeze | online sample | online judge | online report | online promote | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+calibrate | judge grade | judge calibrate | evaluate-pipeline | evaluate-efficiency | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | dataset freeze | online sample | online judge | online report | online promote | traces | pipeline run | pipeline status | pipeline index | pipeline release |
 pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
@@ -41,6 +41,16 @@ from .evaluation.dataset_judge import load_reader, reading_state_of
 from .evaluation.dataset_report import write_report as write_dataset_report
 from .evaluation.dataset_run import run_dataset, to_run
 from .evaluation.diagnose import diagnose_run, load_traces, save_traces
+from .evaluation.efficiency import (
+    EFFICIENCY_REPORT,
+    budgets,
+    dataset_pairs,
+    numbers_of,
+    release_pairs,
+    replay_pairs,
+    tradeoff,
+)
+from .evaluation.efficiency_report import write_report as write_efficiency_report
 from .evaluation.experiment import FROZEN, ExperimentManifest, Frozen
 from .evaluation.gates import compare as compare_runs
 from .evaluation.gates import load_gates
@@ -775,6 +785,10 @@ def main(argv: list[str] | None = None) -> None:
         nargs="+",
         metavar="RUN",
         help="three or more runs in release order: write reports/versions.md with them side by side and the gates between each",
+    )
+    commands.add_parser(
+        "evaluate-efficiency",
+        help=f"every saved run's quality, spend and speed side by side, the tradeoff verdicts and the budgets → {EFFICIENCY_REPORT}",
     )
     latency_cmd = commands.add_parser(
         "evaluate-latency",
@@ -1547,6 +1561,26 @@ def main(argv: list[str] | None = None) -> None:
             for s in calibration.signals:
                 print(f"{s.name}: {s.agreement.agreement:.0%} agreement over {s.agreement.n}")
             print(f"wrote {CALIBRATION_REPORT}")
+        elif args.command == "evaluate-efficiency":
+            runs = {d.name: Run.load(d) for d in sorted(RUNS_DIR.iterdir()) if (d / "manifest.json").exists()}
+            releases = Releases.load(RELEASES)
+            pin = Baseline.load(BASELINE) if BASELINE.exists() else None
+            pairs = [("release", p) for p in release_pairs(runs, releases)]
+            pairs += [("dataset", p) for p in dataset_pairs(runs, pin.run)] if pin else []
+            pairs += [("replay", p) for p in replay_pairs(runs)]
+            trade = [(name, tradeoff(numbers_of(a), numbers_of(b))) for name, (a, b) in pairs]
+            write_efficiency_report(
+                [numbers_of(r) for r in runs.values()],
+                trade,
+                budgets(load_gates(), load_matrix().gates),
+                runs,
+                releases.live.run if releases.live else None,
+                pin.run if pin else None,
+                EFFICIENCY_REPORT,
+            )
+            for name, t in trade:
+                print(f"{name:8} {t.baseline.run} → {t.candidate.run}: {t.verdict} ({t.why})")
+            print(f"wrote {EFFICIENCY_REPORT}")
         elif args.command == "evaluate-pipeline":
             if args.list_runs:
                 for d in sorted(RUNS_DIR.iterdir()) if RUNS_DIR.exists() else []:

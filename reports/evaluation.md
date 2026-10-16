@@ -32,6 +32,9 @@ The two runs share index, generator, backend, prompt, effort; only the retrieval
 | `abstention.adversarial_held` | ≥ 0.8 | 9/10 (90%) | 8/10 (80%) | -10% | pass | 9 of 10 adversarial expectations held in stage 07; under 8 is a prompt change gone wrong |
 | `cost.usd_per_1000` | must not rise by more than 25% of the baseline | $41.66 | $39.79 | -$1.87 | pass | a quarter more per thousand questions is worth flagging, not blocking |
 | `latency.end_to_end_ms_median` | ≤ 15000 | 6,181 ms | 5,714 ms | -467 ms | pass | fifteen seconds a question on CPU is the limit of what a person waits for |
+| `cost.usd_per_request` | ≤ 0.06 | $0.0417 | $0.0398 | -$0.0019 | pass | six cents a question at list price is sixty dollars a thousand; the budget leaves room for a better generator, not for a pipeline that reads twice the passages |
+| `latency.end_to_end_ms_p95` | ≤ 15000 | 8,366 ms | 10,119 ms | +1,754 ms | pass | fifteen seconds for one question in twenty is the limit of what a person waits for; the median gate above warns, this one blocks |
+| `cache.hit_share` | ≥ 0.9 | – | – | – | pass | a replay through the cache should answer nine questions in ten without a call; a run that made no cached call is not measured here |
 
 ## 2. Every metric
 
@@ -82,6 +85,8 @@ The two runs share index, generator, backend, prompt, effort; only the retrieval
 |---|---|---|---|:-:|---|
 | `cost.usd_total` | $2.87 | $2.75 | -$0.13 | ▲ | 68 calls at list prices |
 | `cost.usd_per_1000` | $41.66 | $39.79 | -$1.87 | ▲ | generation cost per thousand questions, abstentions at the threshold included |
+| `cost.usd_per_request` | $0.0417 | $0.0398 | -$0.0019 | ▲ | generation cost per question at list prices, abstentions at the threshold included |
+| `cost.tokens_total` | 3,860,470 | 3,759,025 | -101,445 | ▲ | input plus output tokens over the run |
 | `cost.tokens_in_per_call` | 56,350 | 54,862 | -1,488 | ▲ | input tokens a call reads on average |
 | `cost.tokens_out_per_call` | 421 | 417 | -4 | ▲ | output tokens a call writes on average |
 | `cost.judge_usd` | $0.0048 | $0.0040 | -$0.0008 | ▲ | 56 judge readings |
@@ -93,6 +98,13 @@ The two runs share index, generator, backend, prompt, effort; only the retrieval
 | `latency.generate_ms_median` | 4,603 ms | 4,348 ms | -255 ms | ▲ | the model's time per call, at the median |
 | `latency.end_to_end_ms_median` | 6,181 ms | 5,714 ms | -467 ms | ▲ | retrieval plus generation per question, at the median, over every question |
 | `latency.end_to_end_ms_p90` | 7,981 ms | 8,249 ms | +268 ms | ▼ | retrieval plus generation per question, at the 90th percentile |
+| `latency.end_to_end_ms_p95` | 8,366 ms | 10,119 ms | +1,754 ms | ▼ | retrieval plus generation per question, at the 95th percentile: the budget the release is held to |
+
+**Cache**
+
+| Metric | Baseline | Candidate | Change | | What it measures |
+|---|---|---|---|:-:|---|
+| `cache.hit_share` | – | – | – | = | calls answered from the generation cache; not measured on a run that made none |
 
 ## 3. What changed, question by question
 
