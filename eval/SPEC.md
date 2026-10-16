@@ -417,7 +417,7 @@ each as a version or a content hash: the pipeline (its name, the retrieval confi
 wording, the index, the embedding model, the chunking, the ingest), the model and how it was called
 (generator, backend, effort), the dataset (section 6, `<records>+<hash>`) and the benchmark (the three
 question files), the grader (`<rubric name>+<hash of the grader's prompt>`) and the judge, the gates
-(`matrix.yaml`, `gates.yaml`), and the safety policy (`safety.yaml`, section 12; `none` until it
+(`matrix.yaml`, `gates.yaml`), and the safety policy (`safety.yaml`, section 13; `none` until it
 exists). The variables are grouped as *retrieval, prompt, corpus, model, dataset, grader, gates,
 safety*; `scripts/backfill_experiments.py` writes the manifest onto a run saved before this stage.
 
@@ -441,5 +441,47 @@ The release checklist is [`../docs/release.md`](../docs/release.md).
 uv run infra-docs-rag dataset freeze --note '…'       # pin the assets; `--check` to verify them, exit 1 when one moved
 uv run infra-docs-rag dataset compare --candidate <run> [--allow-confounded]   # the variables table, the one-variable rule
 uv run infra-docs-rag pipeline release --candidate <run>                       # refused under a stale freeze
+```
+
+## 12. Online evaluation and drift
+
+The offline gates read a fixed dataset; live traffic asks what the dataset did not. A **live trace**
+is one the service or `answer` wrote (a run's and the canary's carry a tag and are left out); the
+service also records what people said about an answer (`POST /feedback`, `data/feedback.jsonl`).
+
+**Sampling** ([`online.yaml`](online.yaml), `online sample`): out of a window of live traces (seven
+days by default), every trace a rule fires on, with the rules recorded on the sample: `dissatisfied`
+(a person marked it not helpful), `uncited` (answered under the claim floor), `low-confidence`
+(answered with the best passage's cosine under the near-miss floor), `no-answer`, `long-context` (the
+passages at the budget or some left out), `long-query`, `identifier` (a camelCase, dotted, snake_case
+or `--flag` token), `error`; plus `random`, a stable share of the traces no rule picked, so the sample
+is not only the suspicious traffic. The window is saved under [`online/`](online/) with its samples.
+
+**The online judge** (`online judge`): jev's three questions on every answered sample, against the
+passages its trace names, read back from the index by chunk id; a sample is *failed* when a person said
+so, the claims are under the floor, the call errored, or the judge reads it as ungrounded or fabricated.
+
+**The report** ([`../reports/online.md`](../reports/online.md), `online report`): per window, the
+samples with what picked them and what the judge read; the failure clusters (the failed and the
+no-answer samples grouped by the rule, the outcome and the source of the first passage); and the
+drift: the window's no-answer rate, median top cosine, median claim share, judge grounded share and
+median query length against the offline baseline's (the pinned dataset run) and the window before,
+flagged past the thresholds the policy sets.
+
+**Promotion** (`online promote`): the failed samples, most telling first (`dissatisfied` outranks the
+rest), each turned into a dataset record by `claude -p` from the question, the passages the service
+retrieved and what it answered: the expectation, a reference answer from the passages alone, the
+contexts, the category, the failure mode, the difficulty and the tags; `origin: traces`, `split: test`,
+the sample's provenance in the note, drafted for a person's review. They land in
+[`dataset/harvested.yaml`](dataset/harvested.yaml); `--merge` appends them to `records.yaml`. That
+moves the dataset version, so the baseline is run again, pinned and frozen, deliberately: the loop
+that keeps the dataset aligned with what people ask.
+
+```sh
+uv run infra-docs-rag serve                       # POST /answer, POST /feedback {trace_id, helpful, note}
+uv run infra-docs-rag online sample               # the window → eval/online/<YYYY-Www>.json
+uv run infra-docs-rag online judge                # jev on the answered samples
+uv run infra-docs-rag online report               # → reports/online.md
+uv run infra-docs-rag online promote --n 10       # → eval/dataset/harvested.yaml; then --merge
 ```
 

@@ -1,6 +1,6 @@
 """The service: the released pipeline behind HTTP. `POST /answer` is `infra-docs-rag answer` with a JSON
 body; `GET /health` is `pipeline health`; `GET /traces/{id}` reads the trace log; `GET /release` and
-`GET /versions` say what is answering. Everything loads once at startup (the index, the models, the
+`GET /versions` say what is answering; `POST /feedback` records whether an answer helped, by its trace. Everything loads once at startup (the index, the models, the
 prompt) under the current release, and a request never touches the pipeline's state: the service reads
 an index version, it does not build one.
 
@@ -10,7 +10,7 @@ an index version, it does not build one.
 
 import os
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -27,6 +27,7 @@ from ..generate.generator import DEFAULT_MODEL as DEFAULT_GENERATOR
 from ..generate.judge import Judge, Judgement
 from ..generate.prompt import ABSTAIN
 from ..generate.prompts import Prompt, load_prompt
+from ..observe.feedback import FEEDBACK, Feedback, FeedbackLog
 from ..observe.health import checks, worst
 from ..observe.summary import format_summary, summarize
 from ..observe.trace import TRACES, Trace, TraceLog, trace_answer
@@ -44,6 +45,12 @@ class AnswerRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     judge: bool = False  # have the judge read the answer too (one more call)
     no_cache: bool = False
+
+
+class FeedbackRequest(BaseModel):
+    trace_id: str = Field(min_length=1, max_length=64)
+    helpful: bool
+    note: str = Field(default="", max_length=2000)
 
 
 class CitationOut(BaseModel):
@@ -108,6 +115,7 @@ class Service:
     traces: TraceLog
     releases_path: Path = RELEASES
     index_dir: Path = INDEX_DIR
+    feedback: FeedbackLog = field(default_factory=lambda: FeedbackLog(FEEDBACK))
 
     @property
     def lineage(self) -> PipelineManifest:
@@ -255,6 +263,14 @@ def create_app(service: Service | None = None, loader=load_service) -> FastAPI:
         s = svc(request)
         a, reading, t = s.answer(body.question, body.judge, body.no_cache)
         return response_of(a, reading, t, s.version, s.lineage)
+
+    @app.post("/feedback")
+    def post_feedback(body: FeedbackRequest, request: Request):
+        s = svc(request)
+        if s.traces.find(body.trace_id) is None:
+            raise HTTPException(status_code=404, detail=f"no trace {body.trace_id}")
+        saved = s.feedback.append(Feedback(trace_id=body.trace_id, helpful=body.helpful, note=body.note))
+        return saved.model_dump()
 
     @app.get("/health")
     def get_health(request: Request):

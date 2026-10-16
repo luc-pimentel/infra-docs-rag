@@ -1,6 +1,6 @@
 """Command line: `infra-docs-rag fetch | ingest | report | all | chunk | embed | search | retrieve |
 evaluate | evaluate-chunking | evaluate-retrieval | evaluate-hybrid | evaluate-rerank | answer | evaluate-grounding |
-calibrate | judge grade | judge calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | dataset freeze | traces | pipeline run | pipeline status | pipeline index | pipeline release |
+calibrate | judge grade | judge calibrate | evaluate-pipeline | dataset check | dataset generate | dataset report | dataset run | dataset metrics | dataset compare | dataset baseline | dataset diagnose | dataset freeze | online sample | online judge | online report | online promote | traces | pipeline run | pipeline status | pipeline index | pipeline release |
 pipeline rollback | pipeline canary | pipeline health`, run from the repo root."""
 
 import argparse
@@ -49,6 +49,27 @@ from .evaluation.judge_report import write_report as write_judge_report
 from .evaluation.labels import LABELS, load_labels
 from .evaluation.metrics import metrics
 from .evaluation.metrics_report import write_report as write_metrics_report
+from .evaluation.online import (
+    HARVESTED,
+    ONLINE_DIR,
+    POLICY,
+    HarvestWriter,
+    Window,
+    baseline_rates,
+    clusters,
+    drift,
+    harvest,
+    is_live,
+    judge_samples,
+    load_policy,
+    load_windows,
+    merge_into_records,
+    save_harvested,
+    window_name,
+    window_rates,
+)
+from .evaluation.online import sample as sample_window
+from .evaluation.online_report import write_report as write_online_report
 from .evaluation.regression import BASELINE, Baseline
 from .evaluation.regression import compare as compare_dataset_runs
 from .evaluation.regression_report import write_report as write_regression_report
@@ -85,6 +106,7 @@ from .latency.profile import Workload, profile, questions_of, time_batches
 from .latency.report import load_workload, save_workload
 from .latency.report import write_report as write_latency_report
 from .observe.canary import load_canary, run_canary
+from .observe.feedback import FEEDBACK, FeedbackLog
 from .observe.health import checks, format_checks, worst
 from .observe.summary import format_summary, summarize
 from .observe.summary import write_report as write_observability_report
@@ -135,6 +157,7 @@ DATASET_REPORT = Path("reports/dataset.md")
 METRICS_REPORT = Path("reports/metrics.md")
 REGRESSION_REPORT = Path("reports/regression.md")
 TRACES_REPORT = Path("reports/traces.md")
+ONLINE_REPORT = Path("reports/online.md")
 
 
 def load_documents(path: Path) -> list[Document]:
@@ -779,6 +802,35 @@ def main(argv: list[str] | None = None) -> None:
         "--version", help="a version from eval/versions.yaml (default: the current release)"
     )
     serve_cmd.add_argument("--no-cache", action="store_true", help="no generation cache")
+    online_cmd = commands.add_parser(
+        "online",
+        help=f"the online evaluation ({POLICY}): sample a window of live traffic, judge the samples, report drift, promote failures into the dataset",
+    )
+    online_sub = online_cmd.add_subparsers(dest="online_command", required=True)
+    sample_cmd = online_sub.add_parser(
+        "sample", help=f"pick the live traces of a window by the policy; saves {ONLINE_DIR}/<window>.json"
+    )
+    sample_cmd.add_argument("--until", help="the window's end, YYYY-MM-DD (default: tomorrow)")
+    sample_cmd.add_argument("--days", type=int, help="the window's length (default: the policy's)")
+    judge_online = online_sub.add_parser(
+        "judge", help="jev reads every answered sample of a window not yet read"
+    )
+    judge_online.add_argument("--window", help="the window to judge (default: the latest)")
+    online_sub.add_parser(
+        "report", help=f"the windows, the clusters and the drift against the baseline → {ONLINE_REPORT}"
+    )
+    promote_cmd = online_sub.add_parser(
+        "promote",
+        help=f"draft dataset records from a window's failed samples through claude -p → {HARVESTED}; --merge appends them to records.yaml",
+    )
+    promote_cmd.add_argument("--window", help="the window to harvest (default: the latest)")
+    promote_cmd.add_argument("--n", type=int, default=10, help="records to draft (default 10)")
+    promote_cmd.add_argument(
+        "--effort", default=DATASET_EFFORT, help=f"the writer's effort (default {DATASET_EFFORT})"
+    )
+    promote_cmd.add_argument(
+        "--merge", action="store_true", help=f"append {HARVESTED} to the records (no drafting when it exists)"
+    )
     traces_cmd = commands.add_parser(
         "traces",
         help=f"summarize the trace log ({TRACES}); --last N or --id ID prints traces; --report writes reports/observability.md",
@@ -898,6 +950,100 @@ def main(argv: list[str] | None = None) -> None:
             )
             write_latency_report(workload, runs, LATENCY_REPORT)
             print(f"wrote {LATENCY_REPORT}")
+        elif args.command == "online":
+            log = TraceLog(TRACES)
+            policy = load_policy(POLICY)
+            if args.online_command == "sample":
+                from datetime import UTC, date, datetime, timedelta
+
+                until_day = date.fromisoformat(args.until) if args.until else date.today() + timedelta(days=1)
+                until = datetime(until_day.year, until_day.month, until_day.day, tzinfo=UTC)
+                since = until - timedelta(days=args.days or policy.window_days)
+                traces = log.read()
+                picked, live = sample_window(traces, FeedbackLog(FEEDBACK).by_trace(), policy, since, until)
+                window = Window(
+                    name=window_name(until_day - timedelta(days=1)),
+                    since=since.isoformat(timespec="seconds"),
+                    until=until.isoformat(timespec="seconds"),
+                    live=live,
+                    samples=picked,
+                    policy=policy,
+                )
+                for s in picked:
+                    print(f"{s.trace_id}  {', '.join(s.rules):28} {s.outcome:10} {s.question[:70]}")
+                print(f"{len(picked)} of {live} live traces sampled; wrote {window.save(ONLINE_DIR)}")
+                return
+            windows = load_windows(ONLINE_DIR)
+            if args.online_command in ("judge", "promote"):
+                if not windows:
+                    raise ValueError(f"no window under {ONLINE_DIR}; `online sample` writes one")
+                window = (
+                    next((w for w in windows if w.name == args.window), windows[-1])
+                    if args.window
+                    else windows[-1]
+                )
+                traces = {t.trace_id: t for t in log.read()}
+                index = Index.load(INDEX_DIR / DEFAULT_MODEL)
+                chunks = {c.chunk_id: c for c in index.chunks}
+                if args.online_command == "judge":
+                    from datetime import UTC, datetime
+
+                    read = judge_samples(window.samples, traces, chunks, load_judge())
+                    window.judged_at = datetime.now(UTC).isoformat(timespec="seconds")
+                    print(f"{read} samples read; wrote {window.save(ONLINE_DIR)}")
+                    return
+                if args.merge:
+                    if not HARVESTED.exists():
+                        raise ValueError(f"{HARVESTED} is missing; `online promote` writes it")
+                    from .evaluation.dataset import RECORDS, load_records
+
+                    harvested = load_records(HARVESTED).records
+                    added = merge_into_records(harvested, RECORDS)
+                    print(
+                        f"{added} records appended to {RECORDS}; the dataset version moved: run the baseline again, "
+                        "`dataset baseline set` and `dataset freeze`"
+                    )
+                    return
+                writer = HarvestWriter(ClaudeCodeWriter(effort=args.effort))
+                ds = load_dataset(DATASET_DIR)
+                records = harvest(window.samples, traces, chunks, writer, ds.curated.chunking, args.n)
+                print(
+                    f"{len(records)} records drafted; wrote {save_harvested(records, ds.curated.chunking, window.name, HARVESTED)}"
+                )
+                return
+            # report
+            pin = Baseline.load(BASELINE)
+            base_run = Run.load(RUNS_DIR / pin.run)
+            traces = log.read()
+            live_total = sum(1 for t in traces if is_live(t))
+            from datetime import datetime
+
+            rates = [
+                window_rates(
+                    traces, datetime.fromisoformat(w.since), datetime.fromisoformat(w.until), w.samples
+                )
+                for w in windows
+            ]
+            drifts = [
+                drift(rates[i], baseline_rates(base_run), w.policy, rates[i - 1] if i else None)
+                for i, w in enumerate(windows)
+            ]
+            write_online_report(
+                windows,
+                rates,
+                drifts,
+                [clusters(w.samples) for w in windows],
+                base_run,
+                live_total,
+                HARVESTED,
+                ONLINE_REPORT,
+            )
+            for w, d in zip(windows, drifts, strict=True):
+                flagged = [r.name for r in d if r.drifted]
+                print(
+                    f"{w.name}: {len(w.samples)} samples of {w.live} live traces; drift: {', '.join(flagged) or 'none'}"
+                )
+            print(f"wrote {ONLINE_REPORT}")
         elif args.command == "traces":
             log = TraceLog(TRACES)
             if args.id:
