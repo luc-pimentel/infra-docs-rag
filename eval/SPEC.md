@@ -226,7 +226,7 @@ on dev is checked on test.
 its source in `sources.yaml`, that a benchmark record's contexts are among the passages the benchmark
 labels as right for its question (so a relabelled benchmark surfaces here), that an adversarial
 record's expectation matches the benchmark's, that every category is present and the curated set
-holds 30 to 50 records, and that the audit decides every generated example. It exits 1 on a problem.
+holds 30 to 60 records, and that the audit decides every generated example. It exits 1 on a problem.
 
 ## 7. Metrics by failure mode
 

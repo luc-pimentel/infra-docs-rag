@@ -26,7 +26,7 @@ jobs:
         # releases; the dataset gates read the baseline dataset run against the matrix.
         run: |
           uv run infra-docs-rag evaluate-pipeline --baseline v2-hybrid-rerank-claude-code --candidate v3-budget-claude-code
-          uv run infra-docs-rag dataset metrics --run dataset-v3-budget-claude-code
+          uv run infra-docs-rag dataset metrics --run dataset-v3-budget-claude-code-84
       - name: regression baseline, the saved comparison and the trace diagnosis
         # No model call: the pin has to match its run and the dataset it answered, and the committed
         # candidate's comparison regenerates from the saved runs (the drift check below reads it). The
@@ -35,8 +35,8 @@ jobs:
         run: |
           uv run infra-docs-rag dataset baseline check
           uv run infra-docs-rag dataset freeze --check
-          uv run infra-docs-rag dataset compare --candidate dataset-v4-rerank-50-claude-code --no-block
-          uv run infra-docs-rag dataset diagnose --run dataset-v3-budget-claude-code --run dataset-v4-rerank-50-claude-code
+          uv run infra-docs-rag dataset compare --candidate dataset-v4-rerank-50-claude-code-84 --no-block
+          uv run infra-docs-rag dataset diagnose --run dataset-v3-budget-claude-code-84 --run dataset-v4-rerank-50-claude-code-84
           uv run infra-docs-rag online report
           uv run infra-docs-rag evaluate-efficiency
           uv run infra-docs-rag safety grade --no-block

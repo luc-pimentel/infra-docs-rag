@@ -36,7 +36,10 @@ RECORDS = DATASET_DIR / "records.yaml"
 GENERATED = DATASET_DIR / "generated.yaml"
 AUDIT = DATASET_DIR / "audit.yaml"
 SCHEMA = DATASET_DIR / "schema.json"
-SIZE = (30, 50)  # how many curated records the set is meant to hold
+SIZE = (
+    30,
+    60,
+)  # how many curated records the set is meant to hold; raised from 50 when the first harvested window came in (stage 19)
 
 Category = Literal["fact-lookup", "multi-hop", "ambiguous", "no-answer", "stale", "adversarial"]
 CATEGORIES: tuple[Category, ...] = (

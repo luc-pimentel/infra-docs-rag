@@ -179,7 +179,8 @@ Each stage ships into this repo, so the service grows with the checklist.
   read back from the index, failure clusters, and drift in the no-answer rate, top cosine, claim share,
   grounded share and query length against the offline baseline and the window before; failed samples
   promoted into dataset records with a reference drafted from the passages, merged, and the baseline
-  run again under the new dataset version; on the first window (forty hand-written questions through the
+  and the candidate run again on the 84-record dataset, re-pinned and re-frozen (on it v4 clears the
+  slice gates the 74 records blocked it on, loses one record net, and is still refused, now on safety); on the first window (forty hand-written questions through the
   service, 12 with feedback) 37 of 47 live traces sampled, 22 judged, 9 failed, no rate past its drift
   threshold but the no-answer rate up 14 points on the baseline's, and the ten harvested records mostly
   the corpus gaps people marked unhelpful (sync waves, scrape configs, `rate` vs `irate`, bearer tokens)

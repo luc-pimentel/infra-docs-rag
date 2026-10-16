@@ -4,14 +4,14 @@
 # files to this and refuse when one has moved: a decision is taken under a named set of assets,
 # and changing one is a deliberate `dataset freeze`, not a side effect. Written by
 # `infra-docs-rag dataset freeze`; do not edit by hand.
-dataset_version: 74+e1454a76bb7b
+dataset_version: 84+2849da92d4f8
 benchmark_version: benchmark+de191035db86
 grader_version: answer-quality-v1+11392d5a1f8c
 judge: jev-1.13.0
 matrix_version: matrix+89737319b52c
 gates_version: gates+4a89da166079
 safety_version: safety+44e14914bd02
-frozen_at: '2026-10-16T01:22:58+00:00'
-git_sha: ad54ffe
-note: 'stage 21: the safety policy eval/safety.yaml added; dataset, benchmark, grader,
-  judge and gates unchanged'
+frozen_at: '2026-10-16T01:45:00+00:00'
+git_sha: b0a9514
+note: 'the stage 19 refresh: the dataset moved to 84 records; benchmark, grader, judge,
+  gates and policy unchanged'
